@@ -1,0 +1,201 @@
+<?php
+
+namespace App\Repositories;
+
+use App\Models\Auction;
+use App\Models\AuctionCategory;
+use App\Models\AuctionPlayer;
+use App\Models\Player;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+
+class AuctionPlayerRepository
+{
+    public function paginateForAuction(Auction $auction, ?string $status, ?string $search, int $perPage): LengthAwarePaginator
+    {
+        return AuctionPlayer::with('player')
+            ->where('id_auction', $auction->id)
+            ->when($status, fn ($q) => $q->where('status', $status))
+            ->when($search, fn ($q) => $q->whereHas('player', fn ($p) => $p->where('name', 'like', '%'.$search.'%')))
+            ->orderBy('auction_order')
+            ->paginate($perPage);
+    }
+
+    /**
+     * Every auction-player id in auction order, unfiltered and unpaginated.
+     *
+     * Rides along on the list response because the clients need it for two
+     * things a page of rows cannot answer: the position badge on a row of page
+     * 2, and reorder, which replaces the WHOLE order array. Without it the
+     * client has to fetch the list a second time at perPage=9999 on every
+     * render — which is exactly what crickpro-auction was doing.
+     */
+    public function orderedIdsForAuction(Auction $auction): array
+    {
+        return AuctionPlayer::where('id_auction', $auction->id)
+            ->orderBy('auction_order')
+            ->pluck('id')
+            ->all();
+    }
+
+    /** Row counts per status across the WHOLE auction (not just the current page/filter), plus `all` — what the status-filter chips show. */
+    public function countsForAuction(Auction $auction): array
+    {
+        $counts = AuctionPlayer::where('id_auction', $auction->id)
+            ->selectRaw('status, count(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->all();
+
+        $counts['all'] = array_sum($counts);
+
+        return $counts;
+    }
+
+    /**
+     * Creates the library `Player` row and the auction-scoped `AuctionPlayer`
+     * row together — mirrors the Node app's single "Add Player" form doing
+     * both at once (its Edit form is what splits identity vs auction-scoped
+     * fields into two calls; update() below accepts both in one PATCH instead,
+     * simpler for a single mobile form to submit).
+     */
+    public function add(Auction $auction, array $playerAttributes, array $auctionPlayerAttributes): AuctionPlayer
+    {
+        return DB::transaction(function () use ($auction, $playerAttributes, $auctionPlayerAttributes) {
+            $player = Player::create(['id_owner' => $auction->id_owner, ...$playerAttributes]);
+
+            return $this->attach($auction, $player, $auctionPlayerAttributes);
+        });
+    }
+
+    public function attach(Auction $auction, Player $player, array $auctionPlayerAttributes): AuctionPlayer
+    {
+        $order = $auctionPlayerAttributes['auction_order'] ?? $auction->auctionPlayers()->count();
+
+        if (empty($auctionPlayerAttributes['base_price']) && ! empty($auctionPlayerAttributes['category_code'])) {
+            $category = AuctionCategory::where('id_auction', $auction->id)
+                ->where('code', $auctionPlayerAttributes['category_code'])
+                ->first();
+            $auctionPlayerAttributes['base_price'] = $category->default_base_price ?? 0;
+        }
+
+        $auctionPlayer = AuctionPlayer::create([
+            'id_auction' => $auction->id,
+            'id_player' => $player->id,
+            'auction_order' => $order,
+            ...$auctionPlayerAttributes,
+        ]);
+
+        // Columns left to their migration default (status, round_number, ...)
+        // were never set on this in-memory instance — only what create() was
+        // actually given. Reload so the caller sees what's really stored.
+        return $auctionPlayer->refresh();
+    }
+
+    public function update(AuctionPlayer $auctionPlayer, array $playerAttributes, array $auctionPlayerAttributes): AuctionPlayer
+    {
+        DB::transaction(function () use ($auctionPlayer, $playerAttributes, $auctionPlayerAttributes) {
+            if ($playerAttributes) {
+                $auctionPlayer->player->update($playerAttributes);
+            }
+            if ($auctionPlayerAttributes) {
+                $auctionPlayer->update($auctionPlayerAttributes);
+            }
+        });
+
+        return $auctionPlayer->refresh();
+    }
+
+    /** 422s in the controller if already SOLD — this only ever deletes the roster row, never the library player. */
+    public function remove(AuctionPlayer $auctionPlayer): void
+    {
+        $auctionPlayer->delete();
+    }
+
+    public function reorder(Auction $auction, array $orderedAuctionPlayerIds): void
+    {
+        DB::transaction(function () use ($auction, $orderedAuctionPlayerIds) {
+            foreach ($orderedAuctionPlayerIds as $index => $id) {
+                AuctionPlayer::where('id_auction', $auction->id)->where('id', $id)->update(['auction_order' => $index]);
+            }
+        });
+    }
+
+    public function shuffle(Auction $auction): void
+    {
+        $ids = AuctionPlayer::where('id_auction', $auction->id)->pluck('id')->shuffle()->values();
+        $this->reorder($auction, $ids->all());
+    }
+
+    /**
+     * Pasted-text bulk add, one player per line: `name, role, category, price, phone`.
+     * Trailing fields are optional — ports the Node app's parsePlayerText.
+     */
+    public function bulkAdd(Auction $auction, string $text): int
+    {
+        $lines = array_filter(array_map('trim', explode("\n", $text)));
+        $created = 0;
+
+        DB::transaction(function () use ($auction, $lines, &$created) {
+            foreach ($lines as $line) {
+                $parts = array_map('trim', explode(',', $line));
+                $name = $parts[0] ?? null;
+                if (! $name) {
+                    continue;
+                }
+
+                $role = $this->normalizeRole($parts[1] ?? null);
+                $categoryCode = ! empty($parts[2]) ? mb_strtoupper($parts[2]) : null;
+                $price = isset($parts[3]) && is_numeric($parts[3]) ? (int) $parts[3] : null;
+                $phone = $parts[4] ?? null;
+
+                $player = Player::create([
+                    'id_owner' => $auction->id_owner,
+                    'name' => $name,
+                    'role' => $role,
+                    'phone' => $phone,
+                ]);
+
+                $this->attach($auction, $player, array_filter([
+                    'category_code' => $categoryCode,
+                    'base_price' => $price,
+                ], fn ($v) => $v !== null));
+
+                $created++;
+            }
+        });
+
+        return $created;
+    }
+
+    /** Attaches existing library players into this auction's pool, skipping ones already in it. */
+    public function addFromLibrary(Auction $auction, array $playerIds): int
+    {
+        $alreadyAttached = AuctionPlayer::where('id_auction', $auction->id)->whereIn('id_player', $playerIds)->pluck('id_player');
+        $toAttach = array_diff($playerIds, $alreadyAttached->all());
+        $attached = 0;
+
+        DB::transaction(function () use ($auction, $toAttach, &$attached) {
+            foreach (Player::whereIn('id', $toAttach)->where('id_owner', $auction->id_owner)->get() as $player) {
+                $this->attach($auction, $player, []);
+                $attached++;
+            }
+        });
+
+        return $attached;
+    }
+
+    private function normalizeRole(?string $raw): string
+    {
+        $role = mb_strtolower(trim((string) $raw));
+        $map = [
+            'batter' => Player::ROLE_BATTER, 'bat' => Player::ROLE_BATTER, 'batsman' => Player::ROLE_BATTER,
+            'bowler' => Player::ROLE_BOWLER, 'bowl' => Player::ROLE_BOWLER,
+            'all_rounder' => Player::ROLE_ALL_ROUNDER, 'all-rounder' => Player::ROLE_ALL_ROUNDER, 'allrounder' => Player::ROLE_ALL_ROUNDER,
+            'wicket_keeper' => Player::ROLE_WICKET_KEEPER, 'keeper' => Player::ROLE_WICKET_KEEPER, 'wk' => Player::ROLE_WICKET_KEEPER,
+            'wk_batter' => Player::ROLE_WK_BATTER,
+        ];
+
+        return $map[$role] ?? Player::ROLE_BATTER;
+    }
+}

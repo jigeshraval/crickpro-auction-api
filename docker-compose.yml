@@ -1,0 +1,109 @@
+# CrickPro Auction API — Laravel 13 (PHP 8.4) local stack
+#
+# Self-contained: its OWN MySQL 8 + phpMyAdmin + Redis. Host ports are in the
+# 16080-16083 band — the next free slot after every other CrickPro service in
+# dev-guide/ports.md (which stops at 16071), and deliberately NOT 16041/16042,
+# used by the Node crickpro-auction-api (a separate, unrelated project at
+# /auction/crickpro-auction-api — do not confuse the two).
+#
+# IMPORTANT: that Node project's docker-compose.yml also defaults to
+# container names crickpro-auction-{mysql,redis,phpmyadmin} because Docker
+# Compose derives its default project name from the directory basename, and
+# both project directories happen to be named "crickpro-auction-api". This
+# repo's containers are prefixed crickpro-auction-laravel-* specifically to
+# avoid `docker compose up` in either project silently recreating (and
+# disconnecting from its data volume) the other's containers — confirmed the
+# hard way once already, see git history / session notes.
+#
+# Redis backs SESSION_DRIVER/CACHE_STORE and the AuthThrottler middleware's
+# rate-limit / block-score counters.
+#
+# Explicit project name: without this, Compose derives the project namespace
+# (which also scopes volumes/networks, not just container_name) from this
+# directory's basename — "crickpro-auction-api" — identical to the Node
+# project's directory basename, which caused the container collision noted
+# above in the first place.
+name: crickpro-auction-laravel
+services:
+  laravel.test:
+    restart: unless-stopped
+    container_name: crickpro-auction-laravel-api
+    build:
+      context: ./docker/8.4
+      dockerfile: Dockerfile
+    image: crickpro-auction/app
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '${APP_PORT:-16080}:80'
+    environment:
+      APP_PORT: '${APP_PORT:-16080}'
+    volumes:
+      - '.:/var/www/html'
+    networks:
+      - sail
+    depends_on:
+      - mysql
+      - redis
+
+  mysql:
+    restart: unless-stopped
+    container_name: crickpro-auction-laravel-mysql
+    image: 'mysql:8'
+    ports:
+      - '${FORWARD_DB_PORT:-16081}:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: '${DB_ROOT_PASSWORD:-rootsecret}'
+      MYSQL_DATABASE: '${DB_DATABASE:-crickpro_auction}'
+      MYSQL_USER: '${DB_USERNAME:-crickpro}'
+      MYSQL_PASSWORD: '${DB_PASSWORD:-secret}'
+    volumes:
+      - 'auction-mysql:/var/lib/mysql'
+    networks:
+      - sail
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_ROOT_PASSWORD:-rootsecret}" ]
+      retries: 5
+      timeout: 5s
+      interval: 5s
+
+  phpmyadmin:
+    restart: unless-stopped
+    image: phpmyadmin/phpmyadmin
+    container_name: crickpro-auction-laravel-phpmyadmin
+    ports:
+      - '${FORWARD_PHPMYADMIN_PORT:-16082}:80'
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 512M
+    depends_on:
+      - mysql
+    networks:
+      - sail
+
+  redis:
+    restart: unless-stopped
+    container_name: crickpro-auction-laravel-redis
+    image: 'redis:7-alpine'
+    ports:
+      - '${FORWARD_REDIS_PORT:-16083}:6379'
+    volumes:
+      - 'auction-redis:/data'
+    networks:
+      - sail
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      retries: 5
+      timeout: 5s
+      interval: 5s
+
+networks:
+  sail:
+    driver: bridge
+
+volumes:
+  auction-mysql:
+    driver: local
+  auction-redis:
+    driver: local
