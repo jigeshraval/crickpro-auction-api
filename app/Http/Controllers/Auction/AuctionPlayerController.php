@@ -121,7 +121,12 @@ class AuctionPlayerController extends Controller
 
     public function addFromLibrary(AddPlayersFromLibraryRequest $request, Auction $auction): JsonResponse
     {
-        $attached = $this->auctionPlayers->addFromLibrary($auction, $request->input('playerIds'));
+        $attached = $this->auctionPlayers->addFromLibrary(
+            $auction,
+            $request->input('playerIds'),
+            $request->input('categoryCode'),
+            $request->filled('basePrice') ? (int) $request->input('basePrice') : null,
+        );
 
         return response()->json(['status' => 'success', 'attached' => $attached]);
     }

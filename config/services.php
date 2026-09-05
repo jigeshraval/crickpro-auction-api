@@ -39,6 +39,18 @@ return [
         'send_enabled' => env('EMAIL_SEND_ENABLED', true),
     ],
 
+    // The main CrickPro app's API (crickpro-api-v2). Used by the "Import from
+    // CrickPro App" integration to verify a web access code and relay the
+    // organiser's teams/players. `url` is the base, e.g. http://host.docker.internal:16016.
+    'crickpro' => [
+        'url' => env('CRICKPRO_API_URL'),
+    ],
+
+    // Public web frontend (crickpro-auction) — base for shareable invite links.
+    'auction_web' => [
+        'url' => env('AUCTION_WEB_URL', 'https://auctions.crick.pro'),
+    ],
+
     // Meta WhatsApp Cloud API — same integration as crickpro-api's
     // WhatsAppWebhookController. WhatsAppOtpService no-ops (logs only) when
     // 'token' or 'phone_number_id' aren't set.

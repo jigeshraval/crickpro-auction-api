@@ -5,12 +5,13 @@ namespace App\Repositories;
 use App\Models\Auction;
 use App\Models\AuctionCategory;
 use App\Models\AuctionOverlay;
+use App\Models\AuctionPlayer;
 use App\Models\AuctionSetting;
 use App\Models\BroadcastSession;
 use App\Models\Currency;
 use App\Models\OverlayTemplate;
 use App\Models\Team;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -172,6 +173,50 @@ class AuctionRepository
         return $auction;
     }
 
+    /**
+     * Wipe an auction back to a fresh, editable pre-start state — every player
+     * returns to the pool, every team's purse is restored, and the lifecycle
+     * timestamps + current-player pointer are cleared. Used to re-run an auction
+     * that was started (e.g. a test run) without recreating it.
+     */
+    public function reset(Auction $auction): Auction
+    {
+        if (! in_array($auction->status, [Auction::STATUS_LIVE, Auction::STATUS_PAUSED, Auction::STATUS_COMPLETED, Auction::STATUS_ABANDONED], true)) {
+            throw new \RuntimeException('Only a started auction can be reset.');
+        }
+
+        return DB::transaction(function () use ($auction) {
+            // Clear the current-player FK before touching auction_players.
+            $auction->update(['id_current_auction_player' => null]);
+
+            AuctionPlayer::where('id_auction', $auction->id)->update([
+                'status' => AuctionPlayer::STATUS_PENDING,
+                'current_bid' => null,
+                'id_leading_team' => null,
+                'id_sold_to_team' => null,
+                'sold_price' => null,
+                'bid_count' => 0,
+                'round_number' => 1,
+                'nominated_at' => null,
+                'sold_at' => null,
+                'unsold_at' => null,
+            ]);
+
+            Team::where('id_auction', $auction->id)->update([
+                'remaining_purse' => DB::raw('initial_purse'),
+            ]);
+
+            $auction->update([
+                'status' => Auction::STATUS_READY,
+                'started_at' => null,
+                'paused_at' => null,
+                'completed_at' => null,
+            ]);
+
+            return $auction->fresh();
+        });
+    }
+
     /** Blocked while live/paused — a room full of people bidding and no undo. */
     public function delete(Auction $auction): void
     {
@@ -182,7 +227,7 @@ class AuctionRepository
     }
 
     /** The owner's own auctions — "My Auctions", newest first. */
-    public function paginateForOwner(int $ownerId, ?string $search, int $perPage): LengthAwarePaginator
+    public function paginateForOwner(int $ownerId, ?string $search, int $perPage): Paginator
     {
         return Auction::query()
             ->withCount(['teams', 'auctionPlayers'])
@@ -190,7 +235,7 @@ class AuctionRepository
             ->where('id_owner', $ownerId)
             ->when($search, fn ($q) => $q->where('name', 'like', '%'.$search.'%'))
             ->latest()
-            ->paginate($perPage);
+            ->simplePaginate($perPage);
     }
 
     /**
@@ -199,7 +244,7 @@ class AuctionRepository
      * answers "what's on out there", not "what's mine" — that's My
      * Auction's job.
      */
-    public function paginatePublic(int $excludeOwnerId, ?string $search, int $perPage): LengthAwarePaginator
+    public function paginatePublic(int $excludeOwnerId, ?string $search, int $perPage): Paginator
     {
         return Auction::query()
             ->with(['settings', 'currency'])
@@ -207,7 +252,7 @@ class AuctionRepository
             ->where('id_owner', '!=', $excludeOwnerId)
             ->when($search, fn ($q) => $q->where('name', 'like', '%'.$search.'%'))
             ->latest()
-            ->paginate($perPage);
+            ->simplePaginate($perPage);
     }
 
     /**

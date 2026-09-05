@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Auction\AuctionCategoryController;
+use App\Http\Controllers\Auction\InvitationController;
+use App\Http\Controllers\CrickproController;
 use App\Http\Controllers\Auction\AuctionControlController;
 use App\Http\Controllers\Auction\AuctionController;
 use App\Http\Controllers\Auction\AuctionPlayerController;
@@ -9,7 +11,10 @@ use App\Http\Controllers\Auction\PublicAuctionController;
 use App\Http\Controllers\Auction\TeamController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\CityController;
+use App\Http\Controllers\Ops\OpsSubscriptionController;
+use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\PlayerController;
+use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\UploadController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -61,6 +66,12 @@ Route::prefix('v1/public/auctions')->middleware('throttle:30,1')->group(function
     Route::get('{code}/state', [PublicAuctionController::class, 'state']);
 });
 
+// Public "Invite Player" self-registration — token in the URL is the credential.
+Route::prefix('v1/public/invitations')->middleware('throttle:20,1')->group(function () {
+    Route::get('{auction}/{token}', [InvitationController::class, 'show']);
+    Route::post('{auction}/{token}/join', [InvitationController::class, 'join']);
+});
+
 Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [AuctionController::class, 'index']);
     Route::get('public', [AuctionController::class, 'publicIndex']);
@@ -73,6 +84,8 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::post('{auction}/pause', [AuctionController::class, 'pause']);
     Route::post('{auction}/resume', [AuctionController::class, 'resume']);
     Route::post('{auction}/complete', [AuctionController::class, 'complete']);
+    Route::post('{auction}/reset', [AuctionController::class, 'reset']);
+    Route::get('{auction}/overlay-link', [AuctionController::class, 'overlayLink']);
 
     Route::get('{auction}/state', [AuctionControlController::class, 'state']);
     Route::post('{auction}/control/select-player', [AuctionControlController::class, 'selectPlayer']);
@@ -94,6 +107,7 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::post('{auction}/teams/{team}/logo', [UploadController::class, 'teamLogo']);
 
     Route::get('{auction}/categories', [AuctionCategoryController::class, 'index']);
+    Route::put('{auction}/categories', [AuctionCategoryController::class, 'sync']);
 
     Route::get('{auction}/players', [AuctionPlayerController::class, 'index']);
     Route::get('{auction}/players/{auctionPlayer}', [AuctionPlayerController::class, 'show']);
@@ -104,9 +118,21 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::post('{auction}/players/shuffle', [AuctionPlayerController::class, 'shuffle']);
     Route::post('{auction}/players/bulk', [AuctionPlayerController::class, 'bulkAdd']);
     Route::post('{auction}/players/from-library', [AuctionPlayerController::class, 'addFromLibrary']);
+    Route::post('{auction}/players/import-crickpro', [CrickproController::class, 'import']);
+    Route::post('{auction}/invitations', [InvitationController::class, 'store']);
 
     Route::post('{auction}/cover', [UploadController::class, 'auctionCover']);
     Route::post('{auction}/logo', [UploadController::class, 'auctionLogo']);
+});
+
+Route::prefix('v1/integrations/crickpro')->middleware('auth:sanctum')->group(function () {
+    Route::get('status', [CrickproController::class, 'status']);
+    Route::post('connect', [CrickproController::class, 'connect']);
+    Route::post('disconnect', [CrickproController::class, 'disconnect']);
+    Route::get('teams', [CrickproController::class, 'teams']);
+    Route::get('team-players', [CrickproController::class, 'teamPlayers']);
+    Route::post('search-players', [CrickproController::class, 'searchPlayers']);
+    Route::get('player/{playerId}', [CrickproController::class, 'player']);
 });
 
 Route::prefix('v1/players')->middleware('auth:sanctum')->group(function () {
@@ -116,4 +142,20 @@ Route::prefix('v1/players')->middleware('auth:sanctum')->group(function () {
     Route::patch('{player}', [PlayerController::class, 'update']);
     Route::delete('{player}', [PlayerController::class, 'destroy']);
     Route::post('{player}/photo', [UploadController::class, 'playerPhoto']);
+});
+
+// App-facing subscription: per-auction entitlement + store purchase confirm.
+Route::prefix('v1/subscription')->middleware('auth:sanctum')->group(function () {
+    Route::get('status', [SubscriptionController::class, 'status']);
+    Route::post('confirm', [SubscriptionController::class, 'confirm']);
+});
+
+// RevenueCat webhook — the entitlement source of truth (bearer-token gated).
+Route::post('v1/webhook/revenue-cat', [PaymentWebhookController::class, 'revenueCat']);
+
+// crickpro-admin subscription management (X-Ops-Signature gated).
+Route::prefix('v1/ops')->middleware('ops.signature')->group(function () {
+    Route::get('subscriptions', [OpsSubscriptionController::class, 'index']);
+    Route::post('subscriptions', [OpsSubscriptionController::class, 'store']);
+    Route::delete('subscriptions/{id}', [OpsSubscriptionController::class, 'destroy']);
 });

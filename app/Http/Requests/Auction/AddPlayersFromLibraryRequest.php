@@ -16,6 +16,8 @@ class AddPlayersFromLibraryRequest extends FormRequest
         return [
             'playerIds' => 'required|array|min:1',
             'playerIds.*' => 'integer|exists:players,id',
+            'categoryCode' => 'nullable|string|max:24',
+            'basePrice' => 'nullable|integer|min:0',
         ];
     }
 }

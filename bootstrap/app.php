@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'auth.throttle' => AuthThrottler::class,
+            'ops.signature' => \App\Http\Middleware\VerifyOpsSignature::class,
         ]);
 
         // Pure JSON API — there is no 'login' route to redirect guests to.

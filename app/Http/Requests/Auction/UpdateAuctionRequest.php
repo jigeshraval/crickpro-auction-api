@@ -20,6 +20,8 @@ class UpdateAuctionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'name' => 'sometimes|string|min:2|max:150',
+            'currencyId' => 'sometimes|integer|exists:currencies,id',
             'isListed' => 'sometimes|boolean',
             'venue' => 'sometimes|nullable|string|max:200',
             'scheduledAt' => 'sometimes|nullable|date',

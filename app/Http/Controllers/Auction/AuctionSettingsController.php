@@ -26,16 +26,9 @@ class AuctionSettingsController extends Controller
 
     public function update(UpdateAuctionSettingsRequest $request, Auction $auction): JsonResponse
     {
-        // The old dashboard only disabled this form client-side while
-        // live/paused — rejecting it here too closes that gap rather than
-        // trusting every client to behave.
-        if (in_array($auction->status, [Auction::STATUS_LIVE, Auction::STATUS_PAUSED], true)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Settings are locked while the auction is live or paused.',
-            ], 422);
-        }
-
+        // Settings are editable at any lifecycle stage (incl. live/paused) — the
+        // organiser owns their auction's rules and may adjust them mid-auction
+        // from the Edit Auction screen, which surfaces these same fields.
         $fieldsToColumns = [
             'initialPurse' => 'initial_purse',
             'squadMin' => 'squad_min',

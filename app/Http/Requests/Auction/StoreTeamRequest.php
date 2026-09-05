@@ -16,6 +16,7 @@ class StoreTeamRequest extends FormRequest
         return [
             'name' => 'required|string|min:3|max:120',
             'shortName' => 'required|string|min:2|max:12',
+            'primaryColor' => ['nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
         ];
     }
 }

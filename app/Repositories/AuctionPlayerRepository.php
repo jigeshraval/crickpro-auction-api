@@ -169,15 +169,22 @@ class AuctionPlayerRepository
     }
 
     /** Attaches existing library players into this auction's pool, skipping ones already in it. */
-    public function addFromLibrary(Auction $auction, array $playerIds): int
+    public function addFromLibrary(Auction $auction, array $playerIds, ?string $categoryCode = null, ?int $basePrice = null): int
     {
         $alreadyAttached = AuctionPlayer::where('id_auction', $auction->id)->whereIn('id_player', $playerIds)->pluck('id_player');
         $toAttach = array_diff($playerIds, $alreadyAttached->all());
         $attached = 0;
 
-        DB::transaction(function () use ($auction, $toAttach, &$attached) {
+        // Only the set keys — attach() fills base_price from the category's
+        // default when a code is given and no explicit price is passed.
+        $attrs = array_filter([
+            'category_code' => $categoryCode ? mb_strtoupper($categoryCode) : null,
+            'base_price' => $basePrice,
+        ], fn ($v) => $v !== null);
+
+        DB::transaction(function () use ($auction, $toAttach, $attrs, &$attached) {
             foreach (Player::whereIn('id', $toAttach)->where('id_owner', $auction->id_owner)->get() as $player) {
-                $this->attach($auction, $player, []);
+                $this->attach($auction, $player, $attrs);
                 $attached++;
             }
         });

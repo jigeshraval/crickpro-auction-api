@@ -19,6 +19,7 @@ class UpdateTeamRequest extends FormRequest
         return [
             'name' => 'sometimes|string|min:3|max:120',
             'shortName' => 'sometimes|string|min:2|max:12',
+            'primaryColor' => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{6}$/'],
         ];
     }
 }

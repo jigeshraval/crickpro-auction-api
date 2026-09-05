@@ -29,6 +29,18 @@ class TeamController extends Controller
 
     public function store(StoreTeamRequest $request, Auction $auction): JsonResponse
     {
+        // Enforce the plan's team allowance (free baseline, raised by an active
+        // pack). The app gates this too, but the server is the real guard.
+        $allowance = max((int) config('subscription.free_teams', 3), (int) ($auction->max_teams ?? 0));
+        if ($auction->teams()->count() >= $allowance) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'team_limit',
+                'message' => "This auction allows up to {$allowance} teams. Buy a bigger team pack to add more.",
+                'allowance' => $allowance,
+            ], 402);
+        }
+
         $team = $this->teams->create($auction, $request->validated());
 
         return response()->json([
@@ -45,6 +57,9 @@ class TeamController extends Controller
         }
         if ($request->has('shortName')) {
             $attributes['short_name'] = mb_strtoupper($request->input('shortName'));
+        }
+        if ($request->filled('primaryColor')) {
+            $attributes['primary_color'] = strtoupper($request->input('primaryColor'));
         }
 
         $team = $this->teams->update($team, $attributes);

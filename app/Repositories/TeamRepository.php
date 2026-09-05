@@ -28,7 +28,10 @@ class TeamRepository
         return $auction->teams()->create([
             'name' => $attributes['name'],
             'short_name' => mb_strtoupper($attributes['shortName']),
-            'primary_color' => self::COLOR_PALETTE[$count % count(self::COLOR_PALETTE)],
+            // Organiser's pick, else the next palette colour cycled by team count.
+            'primary_color' => isset($attributes['primaryColor'])
+                ? strtoupper($attributes['primaryColor'])
+                : self::COLOR_PALETTE[$count % count(self::COLOR_PALETTE)],
             'secondary_color' => '#FFFFFF',
             'initial_purse' => $purse,
             'remaining_purse' => $purse,
