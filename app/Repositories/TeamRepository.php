@@ -27,6 +27,9 @@ class TeamRepository
 
         return $auction->teams()->create([
             'name' => $attributes['name'],
+            // CrickPro tournament team id (when imported) — needed to push the
+            // final squad back to that team's tournament roster.
+            'id_crickpro_team' => $attributes['idCrickproTeam'] ?? null,
             'short_name' => mb_strtoupper($attributes['shortName']),
             // Optional logo PATH (e.g. a CrickPro tournament team's thumb); the
             // frontend attaches the CDN base. Null when added manually.

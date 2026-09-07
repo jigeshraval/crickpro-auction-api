@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'id_auction', 'name', 'short_name', 'logo_url', 'primary_color', 'secondary_color',
+    'id_auction', 'id_crickpro_team', 'name', 'short_name', 'logo_url', 'primary_color', 'secondary_color',
     'owner_name', 'initial_purse', 'remaining_purse', 'shortcut_key', 'display_order', 'access_code',
 ])]
 class Team extends Model

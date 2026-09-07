@@ -78,7 +78,10 @@ class CrickproController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'connected' => (bool) $link,
+            // A link with no token (e.g. from access-code login) can't drive the
+            // HTTP relay imports — treat it as "not connected" so the import
+            // screens prompt to connect (mint a token) instead of 401-ing.
+            'connected' => (bool) ($link && $link->token),
             'name' => $link?->name,
         ]);
     }
@@ -107,7 +110,10 @@ class CrickproController extends Controller
         if ($res->status() === 401) {
             $link->delete();
 
-            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+            // 409 (not 401): this is the CrickPro *integration* token expiring, not
+            // the auction session — a 401 would trip the app's interceptor and log
+            // the user out. 409 lets the screen prompt to reconnect CrickPro.
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 409);
         }
 
         return response()->json([
@@ -134,7 +140,10 @@ class CrickproController extends Controller
         if ($res->status() === 401) {
             $link->delete();
 
-            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+            // 409 (not 401): this is the CrickPro *integration* token expiring, not
+            // the auction session — a 401 would trip the app's interceptor and log
+            // the user out. 409 lets the screen prompt to reconnect CrickPro.
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 409);
         }
 
         return response()->json([
@@ -160,7 +169,10 @@ class CrickproController extends Controller
         if ($res->status() === 401) {
             $link->delete();
 
-            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+            // 409 (not 401): this is the CrickPro *integration* token expiring, not
+            // the auction session — a 401 would trip the app's interceptor and log
+            // the user out. 409 lets the screen prompt to reconnect CrickPro.
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 409);
         }
 
         return response()->json([
@@ -190,7 +202,10 @@ class CrickproController extends Controller
         if ($res->status() === 401) {
             $link->delete();
 
-            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+            // 409 (not 401): this is the CrickPro *integration* token expiring, not
+            // the auction session — a 401 would trip the app's interceptor and log
+            // the user out. 409 lets the screen prompt to reconnect CrickPro.
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 409);
         }
 
         return response()->json([
@@ -214,7 +229,10 @@ class CrickproController extends Controller
         if ($res->status() === 401) {
             $link->delete();
 
-            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+            // 409 (not 401): this is the CrickPro *integration* token expiring, not
+            // the auction session — a 401 would trip the app's interceptor and log
+            // the user out. 409 lets the screen prompt to reconnect CrickPro.
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 409);
         }
 
         if (! $res->successful() || ! $res->json('player')) {
@@ -246,7 +264,10 @@ class CrickproController extends Controller
         if ($res->status() === 401) {
             $link->delete();
 
-            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+            // 409 (not 401): this is the CrickPro *integration* token expiring, not
+            // the auction session — a 401 would trip the app's interceptor and log
+            // the user out. 409 lets the screen prompt to reconnect CrickPro.
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 409);
         }
 
         // /search/players returns a flat array of {id,name,thumb}.
@@ -309,6 +330,7 @@ class CrickproController extends Controller
 
         $request->validate([
             'teams' => 'required|array|min:1|max:100',
+            'teams.*.id' => 'nullable|integer',
             'teams.*.name' => 'required|string|min:1|max:120',
             'teams.*.short' => 'nullable|string|max:12',
             'teams.*.logo' => 'nullable|string|max:500',
@@ -325,6 +347,9 @@ class CrickproController extends Controller
 
             $this->teams->create($auction, [
                 'name' => $name,
+                // Keep the CrickPro tournament team id so the completed squad can
+                // be pushed back to that team's roster.
+                'idCrickproTeam' => $t['id'] ?? null,
                 'shortName' => $this->shortFor($t['short'] ?? null, $name),
                 'logoUrl' => $t['logo'] ?? null,
             ]);

@@ -95,6 +95,8 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::post('{auction}/resume', [AuctionController::class, 'resume']);
     Route::post('{auction}/complete', [AuctionController::class, 'complete']);
     Route::post('{auction}/reset', [AuctionController::class, 'reset']);
+    // Push the completed squads back into the linked CrickPro tournament.
+    Route::post('{auction}/push-crickpro', [AuctionController::class, 'pushToCrickpro']);
     Route::get('{auction}/overlay-link', [AuctionController::class, 'overlayLink']);
     Route::get('{auction}/overlay-theme', [AuctionController::class, 'overlayTheme']);
     Route::put('{auction}/overlay-theme', [AuctionController::class, 'saveOverlayTheme']);

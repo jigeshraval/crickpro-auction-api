@@ -22,6 +22,7 @@ class AuctionResource extends JsonResource
             'currency' => new CurrencyResource($this->currency),
             'isListed' => (bool) $this->is_listed,
             'status' => $this->status,
+            'crickproLinked' => (bool) $this->id_crickpro_series,
             'maxTeams' => $this->max_teams !== null ? (int) $this->max_teams : null,
             'overlayAccess' => (bool) $this->overlay_access,
             'currentRound' => $this->current_round,

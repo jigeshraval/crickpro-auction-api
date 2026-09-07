@@ -143,6 +143,31 @@ class AuctionController extends Controller
     }
 
     /**
+     * Push the completed auction's squads back into the linked CrickPro
+     * tournament — imported players link by CrickPro id, manually-added players
+     * get a placeholder CrickPro account created. Idempotent (re-runnable).
+     */
+    public function pushToCrickpro(ShowAuctionRequest $request, Auction $auction, \App\Services\Crickpro\RosterExporter $exporter): JsonResponse
+    {
+        if ($auction->status !== Auction::STATUS_COMPLETED) {
+            return response()->json(['status' => 'error', 'message' => 'Complete the auction before pushing squads to CrickPro.'], 422);
+        }
+        if (! $auction->id_crickpro_series) {
+            return response()->json(['status' => 'error', 'message' => 'This auction is not linked to a CrickPro tournament.'], 422);
+        }
+
+        try {
+            $summary = $exporter->export($auction->load('teams'));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['status' => 'success', 'summary' => $summary]);
+    }
+
+    /**
      * The owner's overlay link credentials: the auction access code + a stable
      * secret (lazily generated once, then reused so the link never changes).
      */
