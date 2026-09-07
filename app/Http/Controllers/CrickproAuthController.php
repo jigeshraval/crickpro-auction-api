@@ -60,7 +60,9 @@ class CrickproAuthController extends Controller
 
         $res = $this->v2($request->token)->get($this->base().'/api/user/auction-identity');
         if (! $res->successful() || ! $res->json('user.id')) {
-            return response()->json(['status' => 'error', 'message' => 'Could not verify your CrickPro session. Try again.'], 401);
+            // 422 (not 401) — a login endpoint returning 401 would trip the app's
+            // session-expired interceptor and bounce the user to sign-in.
+            return response()->json(['status' => 'error', 'message' => 'Could not verify your CrickPro session. Try again.'], 422);
         }
 
         $user = $this->connectAccount(
@@ -117,9 +119,12 @@ class CrickproAuthController extends Controller
         $cpToken = $codeRes->json('token');
 
         // 2) Pull the full profile with that token (name, mobile, thumb).
+        //    422 (not 401) on failure — this is an unauthenticated LOGIN endpoint,
+        //    so a 401 would trip the app's session-expired interceptor and bounce
+        //    the user to the sign-in screen mid-login.
         $idRes = $this->v2($cpToken)->get($this->base().'/api/user/auction-identity');
         if (! $idRes->successful() || ! $idRes->json('user.id')) {
-            return response()->json(['status' => 'error', 'message' => 'Could not load your CrickPro profile. Try again.'], 401);
+            return response()->json(['status' => 'error', 'message' => 'Could not load your CrickPro profile. Try again.'], 422);
         }
 
         // 3) Upsert the auction account + link, then issue an auction session.
