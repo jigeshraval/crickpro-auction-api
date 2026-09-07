@@ -6,7 +6,7 @@ name: CrickPro Auction API Production CI
 #   * No Redis, no MQTT  -> file session + file cache, so NOTHING is dockerised
 #     in production (no docker-compose.production.yml on purpose).
 #   * No IAP store keys  -> the Apple/Google key materialization step is dropped.
-# Real production env lives in the AUCTION_ENV_PROD GitHub secret (distinct from
+# Real production env lives in the ENV_PROD GitHub secret (distinct from
 # api-v2's ENV_PROD so the two never clobber each other on the shared host).
 
 on:
@@ -97,7 +97,7 @@ jobs:
                     uses: appleboy/ssh-action@v1.2.0
                     env:
                           GITHUB_SHA: ${{ github.sha }}
-                          LARAVEL_PROD_ENV: ${{ secrets.AUCTION_ENV_PROD }}
+                          LARAVEL_PROD_ENV: ${{ secrets.ENV_PROD }}
                           BASE_PATH: ${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}
                     with:
                           host: ${{ matrix.server.ip }}
