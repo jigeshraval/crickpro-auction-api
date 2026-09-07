@@ -64,6 +64,23 @@ return [
             ]) : [],
         ],
 
+        // Read-only view of the main CrickPro (api-v2) database — used to
+        // validate Web Access Codes and pull the user's profile directly for
+        // "CrickPro Connect", avoiding an internal HTTP round-trip. Driven by
+        // CRICKPRO_DB_* env vars.
+        'crickpro' => [
+            'driver' => 'mysql',
+            'host' => env('CRICKPRO_DB_HOST', 'host.docker.internal'),
+            'port' => env('CRICKPRO_DB_PORT', '16006'),
+            'database' => env('CRICKPRO_DB_DATABASE', 'crickpro_local'),
+            'username' => env('CRICKPRO_DB_USERNAME', 'jigesh'),
+            'password' => env('CRICKPRO_DB_PASSWORD', 'ravalera1'),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => false,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

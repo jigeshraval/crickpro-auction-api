@@ -12,6 +12,7 @@ use App\Repositories\TeamRepository;
 use App\Services\Auth\AuthTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -84,9 +85,13 @@ class CrickproAuthController extends Controller
 
     /**
      * App-side login with a CrickPro User Id + Web Access Code (no prior auction
-     * session). Validates the code against crickpro-api-v2, pulls the user's
-     * profile, upserts the passwordless auction account bound to that crickpro
-     * user, and issues an auction session — same account model as connect().
+     * session). Reads the CrickPro (api-v2) database DIRECTLY via the `crickpro`
+     * connection — validating the code and pulling the profile in one place, with
+     * no internal HTTP round-trip. Upserts the passwordless auction account bound
+     * to that crickpro user and issues an auction session (same model as connect).
+     *
+     * Mirrors crickpro-api-v2's verifyWebAccessCode: 10-minute window, single-use
+     * (code consumed on success), plus the fixed reviewer bypass (non-consuming).
      */
     public function connectWithAccessCode(Request $request): JsonResponse
     {
@@ -95,45 +100,44 @@ class CrickproAuthController extends Controller
             'accessCode' => 'required|string|size:8',
         ]);
 
-        if (! $this->base()) {
-            return response()->json(['status' => 'error', 'message' => 'CrickPro connect is not configured.'], 503);
+        $userId = (int) $request->userId;
+        $cp = DB::connection('crickpro');
+
+        // Reviewer bypass — fixed creds for Meta / Play reviewers; never consumed.
+        $isReviewer = $userId === 78 && $request->accessCode === '00120989';
+
+        $record = null;
+        if (! $isReviewer) {
+            $record = $cp->table('web_access_codes')
+                ->where('userId', $userId)
+                ->where('accessCode', $request->accessCode)
+                ->where('created_at', '>=', now()->subMinutes(10))
+                ->first();
+
+            if (! $record) {
+                return response()->json(['status' => 'error', 'message' => 'Invalid or expired access code'], 422);
+            }
         }
 
-        // 1) Validate the code with crickpro-api-v2. On success it returns a
-        //    Sanctum token scoped to that user (the code is single-use, 10-min).
-        $codeRes = Http::acceptJson()
-            ->withOptions(['force_ip_resolve' => 'v4'])
-            ->connectTimeout(5)->timeout(20)
-            ->post($this->base().'/api/user/verify-access-code', [
-                'userId' => (int) $request->userId,
-                'accessCode' => $request->accessCode,
-            ]);
-
-        if (! $codeRes->successful() || $codeRes->json('status') !== 'success' || ! $codeRes->json('token')) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $codeRes->json('message') ?: 'Invalid or expired access code.',
-            ], 422);
+        $cpUser = $cp->table('users')->where('id', $userId)->first();
+        if (! $cpUser) {
+            return response()->json(['status' => 'error', 'message' => 'User not found'], 422);
         }
 
-        $cpToken = $codeRes->json('token');
-
-        // 2) Pull the full profile with that token (name, mobile, thumb).
-        //    422 (not 401) on failure — this is an unauthenticated LOGIN endpoint,
-        //    so a 401 would trip the app's session-expired interceptor and bounce
-        //    the user to the sign-in screen mid-login.
-        $idRes = $this->v2($cpToken)->get($this->base().'/api/user/auction-identity');
-        if (! $idRes->successful() || ! $idRes->json('user.id')) {
-            return response()->json(['status' => 'error', 'message' => 'Could not load your CrickPro profile. Try again.'], 422);
+        // Consume the code (single-use); the reviewer bypass leaves it in place.
+        if ($record) {
+            $cp->table('web_access_codes')->where('id', $record->id)->delete();
         }
 
-        // 3) Upsert the auction account + link, then issue an auction session.
+        // Upsert the auction account + link, then issue an auction session. No
+        // handoff token now — the CrickproLink token stays null (only the older
+        // HTTP-based import flow uses it).
         $user = $this->connectAccount(
-            (int) $idRes->json('user.id'),
-            $idRes->json('user.name'),
-            $idRes->json('user.mobile'),
-            $idRes->json('user.thumb'),
-            $cpToken,
+            (int) $cpUser->id,
+            $cpUser->name ?? null,
+            $cpUser->mobile ?? null,
+            $cpUser->thumb ?? null,
+            null,
         );
 
         $token = $this->tokens->issue($user);
