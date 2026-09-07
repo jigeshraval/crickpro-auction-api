@@ -49,6 +49,10 @@ Route::prefix('v1/auth')->group(function () {
     // for an auction session (creates/connects a passwordless account).
     Route::post('crickpro', [CrickproAuthController::class, 'connect'])->middleware('auth.throttle:login-password');
 
+    // "CrickPro Connect" — log in with a CrickPro User Id + Web Access Code
+    // (validated against crickpro-api-v2), creating/connecting the account.
+    Route::post('crickpro-connect', [CrickproAuthController::class, 'connectWithAccessCode'])->middleware('auth.throttle:login-password');
+
     Route::post('verify-reset-otp-mobile', [AuthController::class, 'verifyResetOtpMobile'])->middleware('auth.throttle:verify-reset-otp-mobile');
     Route::post('reset-password-mobile', [AuthController::class, 'resetPasswordMobile'])->middleware('auth.throttle:reset-password-mobile');
     Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('auth.throttle:reset-password');

@@ -81,6 +81,66 @@ class CrickproAuthController extends Controller
     }
 
     /**
+     * App-side login with a CrickPro User Id + Web Access Code (no prior auction
+     * session). Validates the code against crickpro-api-v2, pulls the user's
+     * profile, upserts the passwordless auction account bound to that crickpro
+     * user, and issues an auction session — same account model as connect().
+     */
+    public function connectWithAccessCode(Request $request): JsonResponse
+    {
+        $request->validate([
+            'userId' => 'required|integer',
+            'accessCode' => 'required|string|size:8',
+        ]);
+
+        if (! $this->base()) {
+            return response()->json(['status' => 'error', 'message' => 'CrickPro connect is not configured.'], 503);
+        }
+
+        // 1) Validate the code with crickpro-api-v2. On success it returns a
+        //    Sanctum token scoped to that user (the code is single-use, 10-min).
+        $codeRes = Http::acceptJson()
+            ->withOptions(['force_ip_resolve' => 'v4'])
+            ->connectTimeout(5)->timeout(20)
+            ->post($this->base().'/api/user/verify-access-code', [
+                'userId' => (int) $request->userId,
+                'accessCode' => $request->accessCode,
+            ]);
+
+        if (! $codeRes->successful() || $codeRes->json('status') !== 'success' || ! $codeRes->json('token')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $codeRes->json('message') ?: 'Invalid or expired access code.',
+            ], 422);
+        }
+
+        $cpToken = $codeRes->json('token');
+
+        // 2) Pull the full profile with that token (name, mobile, thumb).
+        $idRes = $this->v2($cpToken)->get($this->base().'/api/user/auction-identity');
+        if (! $idRes->successful() || ! $idRes->json('user.id')) {
+            return response()->json(['status' => 'error', 'message' => 'Could not load your CrickPro profile. Try again.'], 401);
+        }
+
+        // 3) Upsert the auction account + link, then issue an auction session.
+        $user = $this->connectAccount(
+            (int) $idRes->json('user.id'),
+            $idRes->json('user.name'),
+            $idRes->json('user.mobile'),
+            $idRes->json('user.thumb'),
+            $cpToken,
+        );
+
+        $token = $this->tokens->issue($user);
+
+        return response()->json([
+            'status' => 'success',
+            'user' => new UserResource($user),
+            'token' => $token->plainTextToken,
+        ]);
+    }
+
+    /**
      * Server-to-server (crickpro-api-v2, X-Crickpro-Signature gated): create or
      * connect the passwordless account, create the auction, seed its teams —
      * even before the Auction app is installed.
