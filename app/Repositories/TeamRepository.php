@@ -73,8 +73,6 @@ class TeamRepository
     {
         $settings = $auction->settings;
         $squadMax = $settings?->squad_max ?? 15;
-        $minBasePrice = $settings?->min_base_price ?? 0;
-        $enforceSquadMax = (bool) ($settings?->enforce_squad_max ?? true);
 
         $boughtCounts = AuctionPlayer::where('id_auction', $auction->id)
             ->where('status', AuctionPlayer::STATUS_SOLD)
@@ -87,13 +85,12 @@ class TeamRepository
             $boughtCount = (int) ($boughtCounts[$team->id] ?? 0);
             $slotsLeft = max(0, $squadMax - $boughtCount);
 
-            $maxBid = $enforceSquadMax
-                ? $team->remaining_purse - max(0, $slotsLeft - 1) * $minBasePrice
-                : $team->remaining_purse;
-
+            // Max a team can bid = whatever is left in its purse. Simple and
+            // matches expectation ("can they pay this bid?"). No reserve-for-
+            // future-slots math — that over-blocks affordable bids.
             $team->setAttribute('bought_count', $boughtCount);
             $team->setAttribute('slots_left', $slotsLeft);
-            $team->setAttribute('max_bid', max(0, $maxBid));
+            $team->setAttribute('max_bid', max(0, (int) $team->remaining_purse));
         }
 
         return $teams;

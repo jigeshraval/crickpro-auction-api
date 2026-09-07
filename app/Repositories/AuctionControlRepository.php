@@ -243,14 +243,10 @@ class AuctionControlRepository
                 throw new AuctionControlException('SQUAD_FULL', 'This team\'s squad is already full.');
             }
 
-            if ($settings->enforce_purse) {
-                $remainingSlots = max(0, $settings->squad_max - $boughtCount);
-                $maxBid = $settings->enforce_squad_max
-                    ? $team->remaining_purse - max(0, $remainingSlots - 1) * $settings->min_base_price
-                    : $team->remaining_purse;
-                if ($finalAmount > $maxBid) {
-                    throw new AuctionControlException('INSUFFICIENT_PURSE', 'This bid would leave the team unable to fill its remaining squad slots.');
-                }
+            // Simple affordability: the bid can't exceed the purse left. Matches
+            // TeamRepository's displayed max_bid so the sheet and server agree.
+            if ($settings->enforce_purse && $finalAmount > $team->remaining_purse) {
+                throw new AuctionControlException('INSUFFICIENT_PURSE', 'Not enough purse left for this bid.');
             }
 
             if ($settings->enforce_overseas && $player->is_overseas && $settings->max_overseas_per_team !== null) {
