@@ -1,6 +1,5 @@
 name: CrickPro Auction API Production CI
 
-# Mirrors crickpro-api-v2's deploy pipeline (build artifact -> scp -> release ->
 # activate). Differences for the auction API:
 #   * No Octane/Swoole  -> served by `php artisan serve` under pm2.
 #   * No Redis, no MQTT  -> file session + file cache, so NOTHING is dockerised
