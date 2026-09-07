@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\Auction\AuctionCategoryController;
 use App\Http\Controllers\Auction\InvitationController;
+use App\Http\Controllers\CrickproAuthController;
 use App\Http\Controllers\CrickproController;
 use App\Http\Controllers\Auction\AuctionControlController;
 use App\Http\Controllers\Auction\AuctionController;
 use App\Http\Controllers\Auction\AuctionPlayerController;
 use App\Http\Controllers\Auction\AuctionSettingsController;
+use App\Http\Controllers\Auction\OverlayController;
 use App\Http\Controllers\Auction\PublicAuctionController;
 use App\Http\Controllers\Auction\TeamController;
 use App\Http\Controllers\Auth\AuthController;
@@ -42,6 +44,10 @@ Route::prefix('v1/auth')->group(function () {
     Route::post('login-password-mobile', [AuthController::class, 'loginPasswordMobile'])->middleware('auth.throttle:login-password-mobile');
 
     Route::post('register', [AuthController::class, 'register'])->middleware('auth.throttle:register');
+
+    // Seamless "Continue with CrickPro" — exchange a crickpro-app handoff token
+    // for an auction session (creates/connects a passwordless account).
+    Route::post('crickpro', [CrickproAuthController::class, 'connect'])->middleware('auth.throttle:login-password');
 
     Route::post('verify-reset-otp-mobile', [AuthController::class, 'verifyResetOtpMobile'])->middleware('auth.throttle:verify-reset-otp-mobile');
     Route::post('reset-password-mobile', [AuthController::class, 'resetPasswordMobile'])->middleware('auth.throttle:reset-password-mobile');
@@ -86,11 +92,15 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::post('{auction}/complete', [AuctionController::class, 'complete']);
     Route::post('{auction}/reset', [AuctionController::class, 'reset']);
     Route::get('{auction}/overlay-link', [AuctionController::class, 'overlayLink']);
+    Route::get('{auction}/overlay-theme', [AuctionController::class, 'overlayTheme']);
+    Route::put('{auction}/overlay-theme', [AuctionController::class, 'saveOverlayTheme']);
 
     Route::get('{auction}/state', [AuctionControlController::class, 'state']);
     Route::post('{auction}/control/select-player', [AuctionControlController::class, 'selectPlayer']);
     Route::post('{auction}/control/next-player', [AuctionControlController::class, 'nextPlayer']);
     Route::post('{auction}/control/open-bidding', [AuctionControlController::class, 'openBidding']);
+    Route::post('{auction}/control/stop-bidding', [AuctionControlController::class, 'stopBidding']);
+    Route::post('{auction}/control/next-round', [AuctionControlController::class, 'nextRound']);
     Route::post('{auction}/control/bid', [AuctionControlController::class, 'bid']);
     Route::post('{auction}/control/sold', [AuctionControlController::class, 'sold']);
     Route::post('{auction}/control/unsold', [AuctionControlController::class, 'unsold']);
@@ -117,8 +127,10 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::put('{auction}/players/reorder', [AuctionPlayerController::class, 'reorder']);
     Route::post('{auction}/players/shuffle', [AuctionPlayerController::class, 'shuffle']);
     Route::post('{auction}/players/bulk', [AuctionPlayerController::class, 'bulkAdd']);
+    Route::post('{auction}/players/generate-sets', [AuctionPlayerController::class, 'generateSets']);
     Route::post('{auction}/players/from-library', [AuctionPlayerController::class, 'addFromLibrary']);
     Route::post('{auction}/players/import-crickpro', [CrickproController::class, 'import']);
+    Route::post('{auction}/teams/import-crickpro', [CrickproController::class, 'importTeams']);
     Route::post('{auction}/invitations', [InvitationController::class, 'store']);
 
     Route::post('{auction}/cover', [UploadController::class, 'auctionCover']);
@@ -130,10 +142,18 @@ Route::prefix('v1/integrations/crickpro')->middleware('auth:sanctum')->group(fun
     Route::post('connect', [CrickproController::class, 'connect']);
     Route::post('disconnect', [CrickproController::class, 'disconnect']);
     Route::get('teams', [CrickproController::class, 'teams']);
+    Route::get('tournaments', [CrickproController::class, 'tournaments']);
+    // Server-to-server "Start Auctioning" (crickpro-api-v2, X-Crickpro-Signature).
+    Route::post('provision', [CrickproAuthController::class, 'provision'])
+        ->withoutMiddleware('auth:sanctum')->middleware('crickpro.signature');
+    Route::get('tournament-teams', [CrickproController::class, 'tournamentTeams']);
     Route::get('team-players', [CrickproController::class, 'teamPlayers']);
     Route::post('search-players', [CrickproController::class, 'searchPlayers']);
     Route::get('player/{playerId}', [CrickproController::class, 'player']);
 });
+
+// Player role types — static reference for registration / add-player forms (public).
+Route::get('v1/role-types', fn () => response()->json(['status' => 'success', 'roleTypes' => \App\Models\RoleType::orderBy('sort_order')->get(['id', 'name', 'short'])]));
 
 Route::prefix('v1/players')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [PlayerController::class, 'index']);
@@ -150,11 +170,20 @@ Route::prefix('v1/subscription')->middleware('auth:sanctum')->group(function () 
     Route::post('confirm', [SubscriptionController::class, 'confirm']);
 });
 
+// Overlay feed for crickpro-auction-overlay — crickpro-overlay parity: global
+// X-Overlay-Signature on the group, per-auction 8-char secret validated once.
+Route::prefix('v1/overlay')->middleware(['overlay.signature', 'throttle:240,1'])->group(function () {
+    Route::put('auction/validate/secret', [OverlayController::class, 'validateSecret']);
+    Route::get('auction/{auction}/theme-variant', [OverlayController::class, 'theme']);
+    Route::get('auction/{auction}/view', [OverlayController::class, 'state']);
+});
+
 // RevenueCat webhook — the entitlement source of truth (bearer-token gated).
 Route::post('v1/webhook/revenue-cat', [PaymentWebhookController::class, 'revenueCat']);
 
 // crickpro-admin subscription management (X-Ops-Signature gated).
 Route::prefix('v1/ops')->middleware('ops.signature')->group(function () {
+    Route::get('users', [\App\Http\Controllers\Ops\OpsUserController::class, 'index']);
     Route::get('subscriptions', [OpsSubscriptionController::class, 'index']);
     Route::post('subscriptions', [OpsSubscriptionController::class, 'store']);
     Route::delete('subscriptions/{id}', [OpsSubscriptionController::class, 'destroy']);

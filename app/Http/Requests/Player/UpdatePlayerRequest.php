@@ -17,6 +17,7 @@ class UpdatePlayerRequest extends FormRequest
             'name' => 'sometimes|string|min:2|max:120',
             'displayName' => 'sometimes|nullable|string|max:60',
             'role' => 'sometimes|string|in:batter,bowler,all_rounder,wicket_keeper,wk_batter',
+            'roleTypeId' => 'sometimes|nullable|integer|exists:role_types,id',
             'battingStyle' => 'sometimes|nullable|string|in:right_hand,left_hand',
             'bowlingStyle' => 'sometimes|nullable|string|max:40',
             'dateOfBirth' => 'sometimes|nullable|date',

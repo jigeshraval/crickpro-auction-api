@@ -21,11 +21,23 @@ class SubscriptionController extends Controller
         $auctionId = $request->integer('auctionId') ?: null;
         $maxTeams = 0;
         $isSubscribed = false;
+        $teamCount = 0;
+        $allowance = (int) config('subscription.free_teams', 3);
+        $allowed = true;
 
         if ($auctionId) {
             $active = $this->subs->activeForAuction($auctionId);
             $maxTeams = $active?->max_teams ?? 0;
             $isSubscribed = (bool) $active;
+
+            $auction = Auction::find($auctionId);
+            if ($auction) {
+                $allowance = $this->subs->allowanceFor($auction);
+                $teamCount = $auction->teams()->count();
+                // `allowed` is the REAL gate — the plan must cover the team count,
+                // not merely exist. `isSubscribed` alone is misleading.
+                $allowed = $teamCount <= $allowance;
+            }
         }
 
         return response()->json([
@@ -34,6 +46,9 @@ class SubscriptionController extends Controller
                 'isSubscribed' => $isSubscribed,
                 'maxTeams' => (int) $maxTeams,
                 'freeTeams' => (int) config('subscription.free_teams', 3),
+                'teamCount' => (int) $teamCount,
+                'allowance' => (int) $allowance,
+                'allowed' => (bool) $allowed,
             ],
         ]);
     }

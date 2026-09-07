@@ -100,6 +100,18 @@ class SubscriptionService
             ->first();
     }
 
+    /** Team allowance for an auction: free baseline, raised by an active pack. */
+    public function allowanceFor(Auction $auction): int
+    {
+        return max((int) config('subscription.free_teams', 3), (int) ($auction->max_teams ?? 0));
+    }
+
+    /** Does the auction's plan actually cover its current team count? */
+    public function coversTeams(Auction $auction): bool
+    {
+        return $auction->teams()->count() <= $this->allowanceFor($auction);
+    }
+
     /** Denormalise the active entitlement onto the auction row. */
     public function syncAuction(?int $auctionId): void
     {

@@ -82,14 +82,28 @@ class AuctionControlRepository
         ];
     }
 
-    public function selectPlayer(Auction $auction, ?int $auctionPlayerId): array
+    public function selectPlayer(Auction $auction, ?int $auctionPlayerId, bool $force = false): array
     {
-        DB::transaction(function () use ($auction, $auctionPlayerId) {
+        DB::transaction(function () use ($auction, $auctionPlayerId, $force) {
             if ($auction->status !== Auction::STATUS_LIVE) {
                 throw new AuctionControlException('INVALID_STATE', 'The auction must be live to select a player.');
             }
             if ($auction->id_current_auction_player !== null) {
-                throw new AuctionControlException('INVALID_STATE', 'A player is already on the block.');
+                $current = AuctionPlayer::find($auction->id_current_auction_player);
+                // A live bid can't be abandoned — settle it first.
+                if ($current && $current->bid_count > 0) {
+                    throw new AuctionControlException('INVALID_STATE', 'Finish the current player (mark Sold or Unsold) before bringing another.');
+                }
+                // No bids: only swap when explicitly asked (the picker). Otherwise block.
+                if (! $force) {
+                    throw new AuctionControlException('INVALID_STATE', 'A player is already on the block.');
+                }
+                // Return the bid-less current player to the pool and clear the block.
+                if ($current) {
+                    $current->update(['status' => AuctionPlayer::STATUS_PENDING, 'current_bid' => null, 'id_leading_team' => null, 'bid_count' => 0]);
+                }
+                $auction->update(['id_current_auction_player' => null]);
+                $auction->refresh();
             }
 
             if ($auctionPlayerId) {
@@ -133,6 +147,71 @@ class AuctionControlRepository
                 throw new AuctionControlException('INVALID_STATE', 'This player is not awaiting bidding.');
             }
             $player->update(['status' => AuctionPlayer::STATUS_BIDDING]);
+        });
+
+        return $this->buildState($auction);
+    }
+
+    /**
+     * Stop bidding and return the player to the floor (back to the player-intro
+     * state). Clears any standing bid/leader — the auctioneer can re-open or move
+     * on. Only valid while bidding is open.
+     */
+    public function stopBidding(Auction $auction): array
+    {
+        DB::transaction(function () use ($auction) {
+            $player = $this->requireCurrentPlayer($auction);
+            if ($player->status !== AuctionPlayer::STATUS_BIDDING) {
+                throw new AuctionControlException('INVALID_STATE', 'Bidding is not open for this player.');
+            }
+            $player->update([
+                'status' => AuctionPlayer::STATUS_SELECTED,
+                'current_bid' => null,
+                'id_leading_team' => null,
+                'bid_count' => 0,
+            ]);
+        });
+
+        return $this->buildState($auction);
+    }
+
+    /**
+     * Start the next round: bring every UNSOLD player back into the pool (pending)
+     * and bump the round counter. Only when the current round is fully worked
+     * through (no pending left) and re-entry is on.
+     */
+    public function nextRound(Auction $auction): array
+    {
+        DB::transaction(function () use ($auction) {
+            if ($auction->status !== Auction::STATUS_LIVE) {
+                throw new AuctionControlException('INVALID_STATE', 'The auction must be live.');
+            }
+            if (! $auction->settings->allow_reentry) {
+                throw new AuctionControlException('INVALID_STATE', 'Re-entry is disabled for this auction.');
+            }
+            if ($auction->id_current_auction_player !== null) {
+                throw new AuctionControlException('INVALID_STATE', 'Finish the current player before starting a new round.');
+            }
+            if (AuctionPlayer::where('id_auction', $auction->id)->where('status', AuctionPlayer::STATUS_PENDING)->exists()) {
+                throw new AuctionControlException('INVALID_STATE', 'The current round still has players in the pool.');
+            }
+
+            $unsold = AuctionPlayer::where('id_auction', $auction->id)->where('status', AuctionPlayer::STATUS_UNSOLD)->count();
+            if ($unsold === 0) {
+                throw new AuctionControlException('INVALID_STATE', 'No unsold players to re-auction.');
+            }
+
+            AuctionPlayer::where('id_auction', $auction->id)
+                ->where('status', AuctionPlayer::STATUS_UNSOLD)
+                ->update([
+                    'status' => AuctionPlayer::STATUS_PENDING,
+                    'current_bid' => null,
+                    'id_leading_team' => null,
+                    'bid_count' => 0,
+                    'unsold_at' => null,
+                ]);
+
+            $auction->increment('current_round');
         });
 
         return $this->buildState($auction);

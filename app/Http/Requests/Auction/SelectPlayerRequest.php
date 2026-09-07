@@ -15,6 +15,7 @@ class SelectPlayerRequest extends FormRequest
     {
         return [
             'auctionPlayerId' => 'nullable|integer',
+            'force' => 'nullable|boolean',
         ];
     }
 }

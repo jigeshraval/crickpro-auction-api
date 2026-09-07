@@ -44,6 +44,9 @@ return [
     // organiser's teams/players. `url` is the base, e.g. http://host.docker.internal:16016.
     'crickpro' => [
         'url' => env('CRICKPRO_API_URL'),
+        // Shared secret for the server-to-server "Start Auctioning" provision call
+        // (crickpro-api-v2 → this API). Must match CRICKPRO_PROVISION_SECRET there.
+        'provision_secret' => env('CRICKPRO_PROVISION_SECRET'),
     ],
 
     // Public web frontend (crickpro-auction) — base for shareable invite links.

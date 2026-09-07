@@ -62,10 +62,24 @@ class AuctionCategoryController extends Controller
                 $auction->categories()->whereIn('code', $removedCodes)->delete();
             }
             foreach ($incoming as $i => $c) {
+                $existing = AuctionCategory::where('id_auction', $auction->id)->where('code', $c['code'])->first();
+                $oldPrice = $existing?->default_base_price;
+
                 AuctionCategory::updateOrCreate(
                     ['id_auction' => $auction->id, 'code' => $c['code']],
                     ['name' => $c['name'], 'color' => $c['color'], 'default_base_price' => $c['default_base_price'], 'sort_order' => $i],
                 );
+
+                // Propagate a price CHANGE to players still in this category who
+                // INHERITED the old default (base_price == old, still pending) —
+                // custom per-player base prices are left untouched.
+                if ($existing !== null && (int) $oldPrice !== (int) $c['default_base_price']) {
+                    AuctionPlayer::where('id_auction', $auction->id)
+                        ->where('category_code', $c['code'])
+                        ->where('status', 'pending')
+                        ->where('base_price', $oldPrice)
+                        ->update(['base_price' => $c['default_base_price']]);
+                }
             }
         });
 

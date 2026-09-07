@@ -11,12 +11,14 @@ use App\Http\Requests\Auction\SelectPlayerRequest;
 use App\Http\Requests\Auction\ShowAuctionRequest;
 use App\Models\Auction;
 use App\Repositories\AuctionControlRepository;
+use App\Services\AuctionOverlayState;
 use Illuminate\Http\JsonResponse;
 
 class AuctionControlController extends Controller
 {
     public function __construct(
         private readonly AuctionControlRepository $control,
+        private readonly AuctionOverlayState $overlay,
     ) {}
 
     public function state(ShowAuctionRequest $request, Auction $auction): JsonResponse
@@ -26,7 +28,7 @@ class AuctionControlController extends Controller
 
     public function selectPlayer(SelectPlayerRequest $request, Auction $auction): JsonResponse
     {
-        return $this->respond($auction, fn () => $this->control->selectPlayer($auction, $request->integer('auctionPlayerId') ?: null));
+        return $this->respond($auction, fn () => $this->control->selectPlayer($auction, $request->integer('auctionPlayerId') ?: null, $request->boolean('force')));
     }
 
     public function nextPlayer(ShowAuctionRequest $request, Auction $auction): JsonResponse
@@ -37,6 +39,16 @@ class AuctionControlController extends Controller
     public function openBidding(ShowAuctionRequest $request, Auction $auction): JsonResponse
     {
         return $this->respond($auction, fn () => $this->control->openBidding($auction));
+    }
+
+    public function stopBidding(ShowAuctionRequest $request, Auction $auction): JsonResponse
+    {
+        return $this->respond($auction, fn () => $this->control->stopBidding($auction));
+    }
+
+    public function nextRound(ShowAuctionRequest $request, Auction $auction): JsonResponse
+    {
+        return $this->respond($auction, fn () => $this->control->nextRound($auction));
     }
 
     public function bid(PlaceBidRequest $request, Auction $auction): JsonResponse
@@ -81,6 +93,12 @@ class AuctionControlController extends Controller
             return response()->json(['status' => 'error', 'code' => $e->errorCode, 'message' => $e->getMessage()], 422);
         }
 
-        return response()->json(['status' => 'success', 'state' => $state]);
+        // The device (crickpro-auction-app) publishes this `overlay` payload to
+        // MQTT `auction/{id}/state` — auction-api NEVER publishes to MQTT itself.
+        return response()->json([
+            'status' => 'success',
+            'state' => $state,
+            'overlay' => $this->overlay->build($auction->fresh() ?? $auction),
+        ]);
     }
 }

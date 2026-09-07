@@ -79,7 +79,7 @@ class PlayerController extends Controller
     private function columns(Request $request): array
     {
         $fieldsToColumns = [
-            'name' => 'name', 'displayName' => 'display_name', 'role' => 'role',
+            'name' => 'name', 'displayName' => 'display_name', 'role' => 'role', 'roleTypeId' => 'id_role_type',
             'battingStyle' => 'batting_style', 'bowlingStyle' => 'bowling_style',
             'dateOfBirth' => 'date_of_birth', 'nationality' => 'nationality', 'city' => 'city',
             'phone' => 'phone', 'jerseyNumber' => 'jersey_number', 'isCapped' => 'is_capped',

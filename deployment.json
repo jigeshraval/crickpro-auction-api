@@ -1,0 +1,11 @@
+[
+    {
+        "name": "production-server",
+        "ip": "cloud.crick.pro",
+        "port": "22",
+        "beforeHooks": "",
+        "afterHooks": "",
+        "release_path": "/home/mycrickpro/Production/AuctionApi",
+        "version": "1.0.0"
+    }
+]

@@ -8,6 +8,14 @@ return [
     'ops_signature' => env('OPS_SIGNATURE', ''),
 
     /*
+     | Global overlay signature — crickpro-auction-overlay sends this as
+     | X-Overlay-Signature on the /v1/overlay/* routes (theme + state + validate),
+     | matching crickpro-overlay's OVERLAY_API_SIGNATURE. The per-auction 8-char
+     | secret is validated separately (PUT overlay/auction/validate/secret).
+     */
+    'overlay_signature' => env('OVERLAY_SIGNATURE', ''),
+
+    /*
      | Team-pack products (Google Play / App Store product id → max teams). The
      | store product ids are `N_teams`; anything unmapped falls back to parsing
      | the leading number out of the id.

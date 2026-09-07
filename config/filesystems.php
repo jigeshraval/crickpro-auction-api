@@ -60,6 +60,20 @@ return [
             'report' => false,
         ],
 
+        // DigitalOcean Spaces — the shared CrickPro bucket served by cdn.crickpro.net.
+        'do' => [
+            'driver' => 's3',
+            'key' => env('DO_ACCESS_KEY'),
+            'secret' => env('DO_SECRET_KEY'),
+            'region' => env('DO_REGION'),
+            'bucket' => env('DO_BUCKET'),
+            'endpoint' => env('DO_ENDPOINT'),
+            'url' => env('DO_URL'),
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
     ],
 
     /*

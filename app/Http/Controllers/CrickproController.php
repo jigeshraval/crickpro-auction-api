@@ -6,6 +6,7 @@ use App\Models\Auction;
 use App\Models\CrickproLink;
 use App\Repositories\AuctionPlayerRepository;
 use App\Repositories\PlayerRepository;
+use App\Repositories\TeamRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -20,6 +21,7 @@ class CrickproController extends Controller
     public function __construct(
         private readonly PlayerRepository $players,
         private readonly AuctionPlayerRepository $auctionPlayers,
+        private readonly TeamRepository $teams,
     ) {}
 
     private function base(): ?string
@@ -112,6 +114,58 @@ class CrickproController extends Controller
             'status' => 'success',
             'teams' => $res->json('teams', []),
             'nextPage' => $res->json('nextPage'),
+        ]);
+    }
+
+    /** Relay the linked user's tournaments from crickpro-api-v2 (to pick one to import teams from). */
+    public function tournaments(Request $request): JsonResponse
+    {
+        $link = $this->linkFor($request);
+        if (! $link) {
+            return response()->json(['status' => 'error', 'message' => 'CrickPro account not connected.'], 409);
+        }
+
+        $res = Http::withToken($link->token)->acceptJson()
+            ->get($this->base().'/api/user/tournaments', [
+                'q' => $request->query('q'),
+                'page' => (int) $request->query('page', 1),
+            ]);
+
+        if ($res->status() === 401) {
+            $link->delete();
+
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'tournaments' => $res->json('tournaments', []),
+            'nextPage' => $res->json('nextPage'),
+        ]);
+    }
+
+    /** Relay a tournament's teams (id/name/short/logo path) from crickpro-api-v2. */
+    public function tournamentTeams(Request $request): JsonResponse
+    {
+        $request->validate(['tournamentId' => 'required|integer']);
+
+        $link = $this->linkFor($request);
+        if (! $link) {
+            return response()->json(['status' => 'error', 'message' => 'CrickPro account not connected.'], 409);
+        }
+
+        $res = Http::withToken($link->token)->acceptJson()
+            ->get($this->base().'/api/v2/auction-import/tournament/'.((int) $request->tournamentId).'/teams');
+
+        if ($res->status() === 401) {
+            $link->delete();
+
+            return response()->json(['status' => 'error', 'message' => 'CrickPro session expired. Reconnect.'], 401);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'teams' => $res->json('teams', []),
         ]);
     }
 
@@ -210,6 +264,8 @@ class CrickproController extends Controller
         $request->validate([
             'players' => 'required|array|min:1|max:200',
             'players.*.name' => 'required|string|min:1|max:120',
+            'players.*.crickproId' => 'nullable|integer',
+            'players.*.thumb' => 'nullable|string|max:500',
             'players.*.teamRole' => 'nullable|string|max:60',
             'players.*.battingHand' => 'nullable|string|max:60',
             'players.*.bowlingStyle' => 'nullable|string|max:60',
@@ -220,7 +276,11 @@ class CrickproController extends Controller
         $ids = [];
         foreach ($request->input('players') as $p) {
             $player = $this->players->create($auction->id_owner, [
+                // Source ref back to CrickPro — lets a completed auction push the
+                // player into their winning team's tournament squad.
+                'id_crickpro_player' => $p['crickproId'] ?? null,
                 'name' => trim($p['name']),
+                'photo_url' => $p['thumb'] ?? null,
                 'role' => $this->mapRole($p['teamRole'] ?? null),
                 'batting_style' => $this->mapBatting($p['battingHand'] ?? null),
                 'bowling_style' => isset($p['bowlingStyle']) ? mb_substr(trim($p['bowlingStyle']), 0, 40) ?: null : null,
@@ -236,6 +296,58 @@ class CrickproController extends Controller
         );
 
         return response()->json(['status' => 'success', 'imported' => $imported]);
+    }
+
+    /**
+     * Seed the auction's bidding teams from chosen CrickPro tournament teams.
+     * Stores the logo PATH as-is (frontend attaches the CDN); colour is auto-
+     * assigned by the palette cycle. Skips any team whose name already exists.
+     */
+    public function importTeams(Request $request, Auction $auction): JsonResponse
+    {
+        abort_unless($auction->id_owner === $request->user()->id, 403);
+
+        $request->validate([
+            'teams' => 'required|array|min:1|max:100',
+            'teams.*.name' => 'required|string|min:1|max:120',
+            'teams.*.short' => 'nullable|string|max:12',
+            'teams.*.logo' => 'nullable|string|max:500',
+        ]);
+
+        $existing = $auction->teams()->pluck('name')->map(fn ($n) => mb_strtolower($n))->all();
+
+        $imported = 0;
+        foreach ($request->input('teams') as $t) {
+            $name = trim($t['name']);
+            if (in_array(mb_strtolower($name), $existing, true)) {
+                continue; // already in the auction
+            }
+
+            $this->teams->create($auction, [
+                'name' => $name,
+                'shortName' => $this->shortFor($t['short'] ?? null, $name),
+                'logoUrl' => $t['logo'] ?? null,
+            ]);
+            $existing[] = mb_strtolower($name);
+            $imported++;
+        }
+
+        return response()->json(['status' => 'success', 'imported' => $imported]);
+    }
+
+    /** A tidy <=4-char short code — the given one, else initials/first letters of the name. */
+    private function shortFor(?string $short, string $name): string
+    {
+        $s = mb_strtoupper(trim((string) $short));
+        if ($s !== '') {
+            return mb_substr($s, 0, 4);
+        }
+        $words = preg_split('/\s+/', trim($name)) ?: [];
+        if (count($words) >= 2) {
+            return mb_strtoupper(mb_substr($words[0], 0, 1).mb_substr($words[1], 0, 1).mb_substr($words[count($words) - 1], 0, 1));
+        }
+
+        return mb_strtoupper(mb_substr($name, 0, 3));
     }
 
     /** CrickPro's free-text team_role -> the auction's role enum. */

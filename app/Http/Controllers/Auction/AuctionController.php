@@ -17,7 +17,25 @@ class AuctionController extends Controller
 {
     public function __construct(
         private readonly AuctionRepository $auctions,
+        private readonly \App\Services\SubscriptionService $subs,
     ) {}
+
+    /** Shared team-count gate — a 402 when the plan doesn't cover the teams. */
+    private function planGate(Auction $auction): ?JsonResponse
+    {
+        if ($this->subs->coversTeams($auction)) {
+            return null;
+        }
+        $allowance = $this->subs->allowanceFor($auction);
+
+        return response()->json([
+            'status' => 'error',
+            'code' => 'team_limit',
+            'message' => "This auction has {$auction->teams()->count()} teams but the plan allows {$allowance}. Buy a bigger team pack.",
+            'allowance' => $allowance,
+            'teamCount' => $auction->teams()->count(),
+        ], 402);
+    }
 
     public function index(Request $request): JsonResponse
     {
@@ -97,6 +115,10 @@ class AuctionController extends Controller
 
     public function start(ShowAuctionRequest $request, Auction $auction): JsonResponse
     {
+        if ($gate = $this->planGate($auction)) {
+            return $gate;
+        }
+
         return $this->lifecycle($auction, fn () => $this->auctions->start($auction));
     }
 
@@ -126,8 +148,13 @@ class AuctionController extends Controller
      */
     public function overlayLink(ShowAuctionRequest $request, Auction $auction): JsonResponse
     {
-        if (! $auction->overlay_secret) {
-            $auction->update(['overlay_secret' => \Illuminate\Support\Str::random(40)]);
+        if ($gate = $this->planGate($auction)) {
+            return $gate;
+        }
+
+        // 8-char uppercase key, same as crickpro-app's match secret.
+        if (! $auction->overlay_secret || strlen($auction->overlay_secret) !== 8) {
+            $auction->update(['overlay_secret' => strtoupper(\Illuminate\Support\Str::random(8))]);
         }
 
         return response()->json([
@@ -136,6 +163,36 @@ class AuctionController extends Controller
                 'code' => $auction->access_code,
                 'secret' => $auction->overlay_secret,
             ],
+        ]);
+    }
+
+    /** The owner's saved overlay theme config ({ dir, config:{colors} }) — prefill for the app editor. */
+    public function overlayTheme(ShowAuctionRequest $request, Auction $auction): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'theme' => ['dir' => 'ganesha', 'config' => $auction->overlay_theme ?: null],
+        ]);
+    }
+
+    /**
+     * Save the operator's colour overrides. Accepts a free-form `colors` map of
+     * CSS colour / gradient strings (the overlay merges them over the base theme
+     * tokens). Empty / null clears back to the theme defaults.
+     */
+    public function saveOverlayTheme(ShowAuctionRequest $request, Auction $auction): JsonResponse
+    {
+        $data = $request->validate([
+            'colors' => 'nullable|array',
+            'colors.*' => 'nullable|string|max:200',
+        ]);
+
+        $colors = array_filter($data['colors'] ?? [], fn ($v) => is_string($v) && $v !== '');
+        $auction->update(['overlay_theme' => $colors ? ['colors' => $colors] : null]);
+
+        return response()->json([
+            'status' => 'success',
+            'theme' => ['dir' => 'ganesha', 'config' => $auction->overlay_theme ?: null],
         ]);
     }
 

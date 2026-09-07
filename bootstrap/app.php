@@ -18,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.throttle' => AuthThrottler::class,
             'ops.signature' => \App\Http\Middleware\VerifyOpsSignature::class,
+            'overlay.signature' => \App\Http\Middleware\VerifyOverlaySignature::class,
+            'crickpro.signature' => \App\Http\Middleware\VerifyCrickproSignature::class,
         ]);
 
         // Pure JSON API — there is no 'login' route to redirect guests to.

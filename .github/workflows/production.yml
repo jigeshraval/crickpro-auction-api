@@ -1,0 +1,128 @@
+name: CrickPro Auction API Production CI
+
+# Mirrors crickpro-api-v2's deploy pipeline (build artifact -> scp -> release ->
+# activate). Differences for the auction API:
+#   * No Octane/Swoole  -> served by `php artisan serve` under pm2.
+#   * No Redis, no MQTT  -> file session + file cache, so NOTHING is dockerised
+#     in production (no docker-compose.production.yml on purpose).
+#   * No IAP store keys  -> the Apple/Google key materialization step is dropped.
+# Real production env lives in the AUCTION_ENV_PROD GitHub secret (distinct from
+# api-v2's ENV_PROD so the two never clobber each other on the shared host).
+
+on:
+      push:
+            branches: [production]
+
+jobs:
+      create-deployment-artifacts:
+            name: Create deployment artifacts
+            runs-on: ubuntu-latest
+            outputs:
+                  deployment-matrix: ${{ steps.export-deployment-matrix.outputs.deployment-matrix }}
+
+            steps:
+                  - uses: actions/checkout@v4
+
+                  - name: Create deployment artifact
+                    env:
+                          GITHUB_SHA: ${{ github.sha }}
+                    run: tar -czf "${GITHUB_SHA}".tar.gz --exclude=*.git --exclude=node_modules --exclude=tests *
+
+                  - name: Store artifact for distribution
+                    uses: actions/upload-artifact@v4
+                    with:
+                          name: app-build
+                          path: ${{ github.sha }}.tar.gz
+
+                  - name: Export deployment matrix
+                    id: export-deployment-matrix
+                    run: |
+                          JSON="$(cat ./deployment.json)"
+                          JSON="${JSON//'%'/'%25'}"
+                          JSON="${JSON//$'\n'/'%0A'}"
+                          JSON="${JSON//$'\r'/'%0D'}"
+                          echo "::set-output name=deployment-matrix::$JSON"
+
+      prepare-release-on-servers:
+            name: "${{ matrix.server.name }}: Prepare release"
+            runs-on: ubuntu-latest
+            needs: create-deployment-artifacts
+            strategy:
+                  matrix:
+                        server: ${{ fromJson(needs.create-deployment-artifacts.outputs.deployment-matrix) }}
+            steps:
+                  - uses: actions/download-artifact@v4
+                    with:
+                          name: app-build
+                  - name: Upload
+                    uses: appleboy/scp-action@master
+                    with:
+                          host: ${{ matrix.server.ip }}
+                          username: ${{ secrets.AUTH_USER }}
+                          password: ${{ secrets.AUTH_SECRET }}
+                          port: ${{ matrix.server.port }}
+                          source: ${{ github.sha }}.tar.gz
+                          target: ${{ matrix.server.release_path }}/artifacts
+                  - name: Extract archive and create directories
+                    uses: appleboy/ssh-action@v1.2.0
+                    env:
+                          GITHUB_SHA: ${{ github.sha }}
+                          APP_VERSION: ${{ matrix.server.version }}
+                    with:
+                          host: ${{ matrix.server.ip }}
+                          username: ${{ secrets.AUTH_USER }}
+                          password: ${{ secrets.AUTH_SECRET }}
+                          port: ${{ matrix.server.port }}
+                          timeout: 60s
+                          command_timeout: 30m
+                          envs: GITHUB_SHA
+                          script: |
+                                mkdir -p "${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}"
+                                tar xzf ${{ matrix.server.release_path }}/artifacts/${GITHUB_SHA}.tar.gz -C "${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}"
+                                rm -rf ${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}/storage
+
+                                mkdir -p ${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}/storage/{app,public,framework,logs}
+                                mkdir -p ${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}/storage/framework/{cache,sessions,testing,views}
+                                chmod -R 0777 ${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}/storage
+
+      activate-release:
+            name: "${{ matrix.server.name }}: Activate release"
+            runs-on: ubuntu-latest
+            needs: [create-deployment-artifacts, prepare-release-on-servers]
+            strategy:
+                  matrix:
+                        server: ${{ fromJson(needs.create-deployment-artifacts.outputs.deployment-matrix) }}
+            steps:
+                  - name: Activate release
+                    uses: appleboy/ssh-action@v1.2.0
+                    env:
+                          GITHUB_SHA: ${{ github.sha }}
+                          LARAVEL_PROD_ENV: ${{ secrets.AUCTION_ENV_PROD }}
+                          BASE_PATH: ${{ matrix.server.release_path }}/releases/${{ matrix.server.version }}
+                    with:
+                          host: ${{ matrix.server.ip }}
+                          username: ${{ secrets.AUTH_USER }}
+                          password: ${{ secrets.AUTH_SECRET }}
+                          port: ${{ matrix.server.port }}
+                          timeout: 60s
+                          command_timeout: 30m
+                          envs: GITHUB_SHA,LARAVEL_PROD_ENV,BASE_PATH
+                          script: |
+                                cd ${BASE_PATH}
+                                /usr/bin/php8.4 $(which composer) install --no-dev --no-interaction --prefer-dist
+
+                                printf "%s" "$LARAVEL_PROD_ENV" > "${BASE_PATH}/.env"
+
+                                /usr/bin/php8.4 artisan migrate --force
+
+                                # Reference-data seeders (currencies + overlay templates) are
+                                # idempotent (updateOrCreate / firstOrCreate) — safe every deploy.
+                                /usr/bin/php8.4 artisan db:seed --force
+
+                                /usr/bin/php8.4 artisan cache:clear
+                                /usr/bin/php8.4 artisan optimize
+
+                                # No Octane — served by the built-in server under pm2 (file
+                                # session + file cache mean no Redis/Swoole to wire up).
+                                pm2 delete crickpro-auction-api || true
+                                pm2 start artisan --name crickpro-auction-api --interpreter /usr/bin/php8.4 -- serve --host=0.0.0.0 --port=16080

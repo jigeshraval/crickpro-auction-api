@@ -17,6 +17,7 @@ class StorePlayerRequest extends FormRequest
             'name' => 'required|string|min:2|max:120',
             'displayName' => 'nullable|string|max:60',
             'role' => 'nullable|string|in:batter,bowler,all_rounder,wicket_keeper,wk_batter',
+            'roleTypeId' => 'nullable|integer|exists:role_types,id',
             'battingStyle' => 'nullable|string|in:right_hand,left_hand',
             'bowlingStyle' => 'nullable|string|max:40',
             'dateOfBirth' => 'nullable|date',

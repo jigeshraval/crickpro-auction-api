@@ -15,6 +15,8 @@ class PlayerResource extends JsonResource
             'displayName' => $this->display_name,
             'photoUrl' => $this->photo_url,
             'role' => $this->role,
+            'roleTypeId' => $this->id_role_type,
+            'roleType' => $this->whenLoaded('roleType', fn () => $this->roleType ? ['id' => $this->roleType->id, 'name' => $this->roleType->name, 'short' => $this->roleType->short] : null),
             'battingStyle' => $this->batting_style,
             'bowlingStyle' => $this->bowling_style,
             'dateOfBirth' => $this->date_of_birth,

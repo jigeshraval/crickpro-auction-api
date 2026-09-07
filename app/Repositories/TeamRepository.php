@@ -28,6 +28,9 @@ class TeamRepository
         return $auction->teams()->create([
             'name' => $attributes['name'],
             'short_name' => mb_strtoupper($attributes['shortName']),
+            // Optional logo PATH (e.g. a CrickPro tournament team's thumb); the
+            // frontend attaches the CDN base. Null when added manually.
+            'logo_url' => $attributes['logoUrl'] ?? null,
             // Organiser's pick, else the next palette colour cycled by team count.
             'primary_color' => isset($attributes['primaryColor'])
                 ? strtoupper($attributes['primaryColor'])

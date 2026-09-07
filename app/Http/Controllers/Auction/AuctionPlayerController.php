@@ -119,6 +119,13 @@ class AuctionPlayerController extends Controller
         return response()->json(['status' => 'success', 'created' => $created]);
     }
 
+    public function generateSets(ShowAuctionRequest $request, Auction $auction): JsonResponse
+    {
+        $assigned = $this->auctionPlayers->generateSetsFromRoles($auction);
+
+        return response()->json(['status' => 'success', 'assigned' => $assigned]);
+    }
+
     public function addFromLibrary(AddPlayersFromLibraryRequest $request, Auction $auction): JsonResponse
     {
         $attached = $this->auctionPlayers->addFromLibrary(
