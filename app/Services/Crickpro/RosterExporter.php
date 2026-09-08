@@ -102,10 +102,13 @@ class RosterExporter
             //  - keep players already in it (captain/wk flags untouched),
             //  - add the new ones,
             //  - remove those no longer in the auction squad.
+            // NOTE: series_team_squads has a deleted_at column but api-v2's model
+            // does NOT use SoftDeletes and its reads never filter it — so we treat
+            // rows as plain and HARD-delete removals (a soft delete would leave the
+            // player counted by the tournament).
             $existingIds = array_map('intval', $this->db()->table('series_team_squads')
                 ->where('id_series', $seriesId)
                 ->where('id_team', $crickproTeamId)
-                ->whereNull('deleted_at')
                 ->pluck('id_player')
                 ->all());
 
@@ -115,8 +118,7 @@ class RosterExporter
                     ->where('id_series', $seriesId)
                     ->where('id_team', $crickproTeamId)
                     ->whereIn('id_player', $toRemove)
-                    ->whereNull('deleted_at')
-                    ->update(['deleted_at' => now(), 'updated_at' => now()]);
+                    ->delete();
                 $summary['squadRemoved'] += count($toRemove);
             }
 
