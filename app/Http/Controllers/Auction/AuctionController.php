@@ -149,11 +149,26 @@ class AuctionController extends Controller
      */
     public function pushToCrickpro(ShowAuctionRequest $request, Auction $auction, \App\Services\Crickpro\RosterExporter $exporter): JsonResponse
     {
-        if ($auction->status !== Auction::STATUS_COMPLETED) {
-            return response()->json(['status' => 'error', 'message' => 'Complete the auction before pushing squads to CrickPro.'], 422);
+        // No completed-status requirement — the organiser can push the current
+        // squads any time (mid-auction or after). It's idempotent + re-runnable.
+
+        // Link on first push if the auction isn't tied to a tournament yet — the
+        // organiser picks an existing CrickPro tournament at push time. Changing
+        // an already-linked tournament is intentionally NOT allowed (no data
+        // wipe), so a link is only ever set once here.
+        if (! $auction->id_crickpro_series && $request->filled('tournamentId')) {
+            $request->validate([
+                'tournamentId' => 'required|integer',
+                'tournamentName' => 'nullable|string|max:160',
+            ]);
+            $auction->update([
+                'id_crickpro_series' => (int) $request->input('tournamentId'),
+                'crickpro_series_name' => $request->input('tournamentName') ?: null,
+            ]);
         }
+
         if (! $auction->id_crickpro_series) {
-            return response()->json(['status' => 'error', 'message' => 'This auction is not linked to a CrickPro tournament.'], 422);
+            return response()->json(['status' => 'error', 'message' => 'Pick a CrickPro tournament to connect this auction first.'], 422);
         }
 
         try {

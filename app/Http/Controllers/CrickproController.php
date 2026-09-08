@@ -329,12 +329,23 @@ class CrickproController extends Controller
         abort_unless($auction->id_owner === $request->user()->id, 403);
 
         $request->validate([
+            'tournamentId' => 'nullable|integer',
+            'tournamentName' => 'nullable|string|max:160',
             'teams' => 'required|array|min:1|max:100',
             'teams.*.id' => 'nullable|integer',
             'teams.*.name' => 'required|string|min:1|max:120',
             'teams.*.short' => 'nullable|string|max:12',
             'teams.*.logo' => 'nullable|string|max:500',
         ]);
+
+        // Record the source tournament so the auction knows which CrickPro
+        // tournament its squads push back to (id + name for display).
+        if ($request->filled('tournamentId')) {
+            $auction->update([
+                'id_crickpro_series' => (int) $request->input('tournamentId'),
+                'crickpro_series_name' => $request->input('tournamentName') ?: $auction->crickpro_series_name,
+            ]);
+        }
 
         $existing = $auction->teams()->pluck('name')->map(fn ($n) => mb_strtolower($n))->all();
 

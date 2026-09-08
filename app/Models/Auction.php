@@ -10,7 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
-    'id_owner', 'id_currency', 'name', 'slug', 'season_label', 'description', 'logo_url', 'cover_url',
+    'id_owner', 'id_currency', 'id_crickpro_series', 'crickpro_series_name',
+    'name', 'slug', 'season_label', 'description', 'logo_url', 'cover_url',
     'venue', 'access_code', 'overlay_secret', 'overlay_theme', 'max_teams', 'overlay_access', 'is_listed', 'status',
     'current_round', 'id_current_auction_player', 'event_sequence',
     'scheduled_at', 'started_at', 'paused_at', 'completed_at',

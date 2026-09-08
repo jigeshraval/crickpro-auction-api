@@ -23,6 +23,8 @@ class AuctionResource extends JsonResource
             'isListed' => (bool) $this->is_listed,
             'status' => $this->status,
             'crickproLinked' => (bool) $this->id_crickpro_series,
+            'crickproSeriesId' => $this->id_crickpro_series ? (int) $this->id_crickpro_series : null,
+            'crickproSeriesName' => $this->crickpro_series_name,
             'maxTeams' => $this->max_teams !== null ? (int) $this->max_teams : null,
             'overlayAccess' => (bool) $this->overlay_access,
             'currentRound' => $this->current_round,

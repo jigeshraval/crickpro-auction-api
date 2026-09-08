@@ -190,6 +190,15 @@ class CrickproAuthController extends Controller
         ]);
         $auction = $result['auction'];
 
+        // Bind the auction to the CrickPro tournament it was launched from, so
+        // its final squads can push back (id + name for display).
+        if (! empty($data['tournamentId'])) {
+            $auction->update([
+                'id_crickpro_series' => (int) $data['tournamentId'],
+                'crickpro_series_name' => $data['tournamentName'] ?: null,
+            ]);
+        }
+
         // Seed teams — fetched with the SAME token, so only teams the crickpro
         // user is allowed to see can be imported.
         $imported = 0;
