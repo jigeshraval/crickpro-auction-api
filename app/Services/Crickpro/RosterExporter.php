@@ -41,10 +41,11 @@ class RosterExporter
             'seriesId' => $seriesId,
             'teams' => 0,
             'teamsWithoutRef' => 0,
-            'linked' => 0,   // already had a CrickPro user
-            'created' => 0,  // new placeholder user made
-            'squadAdded' => 0,
-            'squadSkipped' => 0, // already in squad
+            'linked' => 0,        // sold player already had a CrickPro user
+            'created' => 0,       // new placeholder user made
+            'squadAdded' => 0,    // newly added to the tournament squad
+            'squadKept' => 0,     // already in the squad (captain/wk flags preserved)
+            'squadRemoved' => 0,  // in the squad before but not in the auction result
         ];
 
         foreach ($auction->teams as $team) {
@@ -61,6 +62,8 @@ class RosterExporter
                 ->where('id_sold_to_team', $team->id)
                 ->get();
 
+            // Desired squad = the CrickPro user ids for this team's sold players.
+            $desired = [];
             foreach ($sold as $ap) {
                 $player = $ap->player;
                 if (! $player) {
@@ -84,7 +87,6 @@ class RosterExporter
                 ];
 
                 [$userId, $created] = $this->resolveOrCreateUser($player, $addedBy, $meta);
-
                 if ($created) {
                     $summary['created']++;
                     // Backfill so a re-run links instead of re-creating.
@@ -92,9 +94,50 @@ class RosterExporter
                 } else {
                     $summary['linked']++;
                 }
-
-                $summary[$this->addToSquad($crickproTeamId, $userId, $seriesId) ? 'squadAdded' : 'squadSkipped']++;
+                $desired[$userId] = true;
             }
+            $desiredIds = array_map('intval', array_keys($desired));
+
+            // Sync this team's tournament squad to the auction result:
+            //  - keep players already in it (captain/wk flags untouched),
+            //  - add the new ones,
+            //  - remove those no longer in the auction squad.
+            $existingIds = array_map('intval', $this->db()->table('series_team_squads')
+                ->where('id_series', $seriesId)
+                ->where('id_team', $crickproTeamId)
+                ->whereNull('deleted_at')
+                ->pluck('id_player')
+                ->all());
+
+            $toRemove = array_diff($existingIds, $desiredIds);
+            if (! empty($toRemove)) {
+                $this->db()->table('series_team_squads')
+                    ->where('id_series', $seriesId)
+                    ->where('id_team', $crickproTeamId)
+                    ->whereIn('id_player', $toRemove)
+                    ->whereNull('deleted_at')
+                    ->update(['deleted_at' => now(), 'updated_at' => now()]);
+                $summary['squadRemoved'] += count($toRemove);
+            }
+
+            $toAdd = array_diff($desiredIds, $existingIds);
+            foreach ($toAdd as $userId) {
+                $this->db()->table('series_team_squads')->insert([
+                    'id_series' => $seriesId,
+                    'id_team' => $crickproTeamId,
+                    'id_player' => $userId,
+                    'designation' => null,
+                    'captain' => 0,
+                    'wk' => 0,
+                    'approved' => 1, // auction result is authoritative
+                    'floater' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $summary['squadAdded']++;
+            }
+
+            $summary['squadKept'] += count(array_intersect($desiredIds, $existingIds));
         }
 
         return $summary;
@@ -147,35 +190,6 @@ class RosterExporter
         return [(int) $id, true];
     }
 
-    /** Mirrors TeamsV2::hasPlayerInTheSquad + addPlayerToTournamentSquad. */
-    private function addToSquad(int $crickproTeamId, int $userId, int $seriesId): bool
-    {
-        $exists = $this->db()->table('series_team_squads')
-            ->where('id_series', $seriesId)
-            ->where('id_player', $userId)
-            ->where('id_team', $crickproTeamId)
-            ->whereNull('deleted_at')
-            ->exists();
-
-        if ($exists) {
-            return false;
-        }
-
-        $this->db()->table('series_team_squads')->insert([
-            'id_series' => $seriesId,
-            'id_team' => $crickproTeamId,
-            'id_player' => $userId,
-            'designation' => null,
-            'captain' => 0,
-            'wk' => 0, // matches TeamsV2::addPlayerToTournamentSquad (defaults)
-            'approved' => 1, // auction result is authoritative
-            'floater' => 0,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return true;
-    }
 
     /** ucwords2 equivalent: title-case unless the name is mostly caps already. */
     private function cleanName(?string $name): string
