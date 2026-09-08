@@ -23,6 +23,7 @@ class UpdateAuctionRequest extends FormRequest
             'name' => 'sometimes|string|min:2|max:150',
             'currencyId' => 'sometimes|integer|exists:currencies,id',
             'isListed' => 'sometimes|boolean',
+            'imageRounded' => 'sometimes|boolean',
             'venue' => 'sometimes|nullable|string|max:200',
             'scheduledAt' => 'sometimes|nullable|date',
             'seasonLabel' => 'sometimes|nullable|string|max:60',

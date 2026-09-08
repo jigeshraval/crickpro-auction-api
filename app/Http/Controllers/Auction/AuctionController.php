@@ -95,6 +95,9 @@ class AuctionController extends Controller
         if ($request->has('isListed')) {
             $attributes['is_listed'] = $request->boolean('isListed');
         }
+        if ($request->has('imageRounded')) {
+            $attributes['image_rounded'] = $request->boolean('imageRounded');
+        }
         if ($request->has('currencyId')) {
             $attributes['id_currency'] = (int) $request->input('currencyId');
         }

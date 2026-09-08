@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'id_owner', 'id_currency', 'id_crickpro_series', 'crickpro_series_name',
     'name', 'slug', 'season_label', 'description', 'logo_url', 'cover_url',
-    'venue', 'access_code', 'overlay_secret', 'overlay_theme', 'max_teams', 'overlay_access', 'is_listed', 'status',
+    'venue', 'access_code', 'overlay_secret', 'overlay_theme', 'max_teams', 'overlay_access', 'is_listed', 'status', 'image_rounded',
     'current_round', 'id_current_auction_player', 'event_sequence',
     'scheduled_at', 'started_at', 'paused_at', 'completed_at',
 ])]
@@ -36,6 +36,7 @@ class Auction extends Model
     {
         return [
             'is_listed' => 'boolean',
+            'image_rounded' => 'boolean',
             'overlay_theme' => 'array',
             'scheduled_at' => 'datetime',
             'started_at' => 'datetime',
