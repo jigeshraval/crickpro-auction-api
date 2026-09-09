@@ -95,7 +95,7 @@ class AuctionOverlayState
                 'currencySymbol' => $auction->currency?->symbol ?? '₹',
                 'status' => $auction->status,
                 'round' => (int) ($auction->current_round ?? 1),
-                'imageRounded' => (bool) ($auction->image_rounded ?? false),
+                'imageRounded' => (bool) ($auction->image_rounded ?? true),
             ],
             'settings' => [
                 'squadMin' => (int) ($settings->squad_min ?? 0),

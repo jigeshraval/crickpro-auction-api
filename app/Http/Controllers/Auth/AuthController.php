@@ -17,6 +17,7 @@ use App\Http\Requests\Auth\VerifyResetOtpMobileRequest;
 use App\Http\Requests\Auth\VerifyWhatsappOtpRequest;
 use App\Http\Resources\UserResource;
 use App\Mail\OtpMail;
+use App\Models\Auction;
 use App\Models\PasswordResetCode;
 use App\Models\User;
 use App\Repositories\AuthRepository;
@@ -24,6 +25,7 @@ use App\Services\Auth\AuthTokenService;
 use App\Services\WhatsAppOtpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -383,6 +385,42 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['status' => 'success', 'message' => 'Logged out']);
+    }
+
+    /**
+     * Permanent account + data deletion (Play/App Store requirement). Revokes
+     * every session, soft-deletes the user's auctions (which hides all nested
+     * teams/players/overlays from the app + API), scrubs all personal data so
+     * nothing identifiable remains, then soft-deletes the account. Irreversible.
+     */
+    public function deleteAccount(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        DB::transaction(function () use ($user) {
+            // Revoke all sessions/tokens across every device + client.
+            $user->tokens()->delete();
+
+            // Remove the user's owned auctions (soft delete cascades visibility
+            // of their teams/players/overlays through the ownership scope).
+            Auction::where('id_owner', $user->id)->get()->each->delete();
+
+            // Scrub PII + block re-use of the identity, then soft-delete.
+            $user->forceFill([
+                'name' => 'Deleted User',
+                'email' => 'deleted+'.$user->id.'@crickpro.deleted',
+                'mobile' => null,
+                'masked_mobile' => null,
+                'profile_image' => null,
+                'password' => null,
+                'uid' => null,
+                'status' => 4, // deleted
+            ])->save();
+
+            $user->delete();
+        });
+
+        return response()->json(['status' => 'success', 'message' => 'Your account and data have been deleted']);
     }
 
     private function blockedResponse(?User $user): ?JsonResponse

@@ -60,6 +60,7 @@ Route::prefix('v1/auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('user', [AuthController::class, 'user']);
         Route::post('logout', [AuthController::class, 'logout']);
+        Route::delete('account', [AuthController::class, 'deleteAccount']);
     });
 });
 
