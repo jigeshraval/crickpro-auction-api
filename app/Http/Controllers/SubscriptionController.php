@@ -13,6 +13,22 @@ class SubscriptionController extends Controller
     public function __construct(private readonly SubscriptionService $subs) {}
 
     /**
+     * The team-pack catalogue, ascending by team count.
+     *
+     * For clients that can't read the store's own offering — the web build has no
+     * billing SDK — so the subscription screen shows the same tiers this API
+     * enforces rather than a hardcoded copy. The native apps use RevenueCat.
+     */
+    public function plans(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'data' => $this->subs->teamPacks(),
+            'freeTeams' => (int) config('subscription.free_teams', 3),
+        ]);
+    }
+
+    /**
      * Per-auction entitlement for the signed-in user. `auctionId` optional — when
      * given, returns that auction's team allowance + overlay access.
      */

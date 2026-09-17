@@ -18,12 +18,53 @@ class SubscriptionService
     {
         $map = config('subscription.team_packs', []);
         if (isset($map[$planId])) {
-            return (int) $map[$planId];
+            // A pack is `['teams' => N, 'price' => ...]`; a bare int is still
+            // accepted so an older/overridden config keeps working.
+            return (int) (is_array($map[$planId]) ? ($map[$planId]['teams'] ?? 0) : $map[$planId]);
         }
         if (preg_match('/(\d+)/', $planId, $m)) {
             return (int) $m[1];
         }
         return 0;
+    }
+
+    /**
+     * The team-pack catalogue, ascending by team count — what a client renders on
+     * its subscription screen.
+     *
+     * The native apps get their packages (and the real, localised price) from the
+     * store via RevenueCat and don't need this. The web build has no billing SDK
+     * to ask, so it reads the tiers from here instead of hardcoding a list that
+     * would drift from the one this service actually enforces. `priceString` is
+     * null for any pack with no configured price.
+     */
+    public function teamPacks(): array
+    {
+        $symbol = (string) config('subscription.currency_symbol', '');
+        $currency = (string) config('subscription.currency', '');
+
+        $packs = [];
+
+        foreach ((array) config('subscription.team_packs', []) as $productId => $pack) {
+            $teams = (int) (is_array($pack) ? ($pack['teams'] ?? 0) : $pack);
+            $raw = is_array($pack) ? ($pack['price'] ?? null) : null;
+            $price = ($raw === null || $raw === '') ? null : (float) $raw;
+
+            $packs[] = [
+                'productId' => (string) $productId,
+                'teams' => $teams,
+                'price' => $price,
+                'currency' => $currency,
+                // Whole amounts read better without the trailing ".00".
+                'priceString' => $price === null
+                    ? null
+                    : $symbol.number_format($price, fmod($price, 1.0) === 0.0 ? 0 : 2),
+            ];
+        }
+
+        usort($packs, fn (array $a, array $b) => $a['teams'] <=> $b['teams']);
+
+        return $packs;
     }
 
     /**
