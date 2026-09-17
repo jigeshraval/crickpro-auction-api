@@ -173,6 +173,7 @@ Route::prefix('v1/players')->middleware('auth:sanctum')->group(function () {
 
 // App-facing subscription: per-auction entitlement + store purchase confirm.
 Route::prefix('v1/subscription')->middleware('auth:sanctum')->group(function () {
+    Route::get('plans', [SubscriptionController::class, 'plans']);
     Route::get('status', [SubscriptionController::class, 'status']);
     Route::post('confirm', [SubscriptionController::class, 'confirm']);
 });
