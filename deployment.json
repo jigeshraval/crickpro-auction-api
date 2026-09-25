@@ -7,5 +7,23 @@
         "afterHooks": "",
         "release_path": "/home/mycrickpro/Production/AuctionApi",
         "version": "1.0.0"
+    },
+    {
+        "name": "Toronto",
+        "ip": "ssdnodes.crick.pro",
+        "port": "22",
+        "beforeHooks": "",
+        "afterHooks": "",
+        "release_path": "/home/mycrickpro/Production/AuctionApi",
+        "version": "1.0.0"
+    },
+    {
+        "name": "Mumbai",
+        "ip": "mum-ssdnodes.crick.pro",
+        "port": "22",
+        "beforeHooks": "",
+        "afterHooks": "",
+        "release_path": "/home/mycrickpro/Production/AuctionApi",
+        "version": "1.0.0"
     }
 ]
