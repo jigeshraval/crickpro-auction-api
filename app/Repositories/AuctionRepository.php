@@ -239,20 +239,30 @@ class AuctionRepository
     }
 
     /**
-     * Every publicly listed auction from every OTHER organiser — the
-     * Dashboard's "All Auctions" feed. Excludes the caller's own: this
-     * answers "what's on out there", not "what's mine" — that's My
-     * Auction's job.
+     * Listed auctions for the All Auctions tabs. With a status tab the caller's
+     * own auctions are included (an organiser sees their own live room too);
+     * without one it keeps the original Dashboard feed (others' auctions, latest).
+     * Abandoned auctions are never listed.
      */
-    public function paginatePublic(int $excludeOwnerId, ?string $search, int $perPage): Paginator
+    public function paginatePublic(int $excludeOwnerId, ?string $search, int $perPage, ?string $status = null): Paginator
     {
-        return Auction::query()
+        $query = Auction::query()
             ->with(['settings', 'currency'])
+            ->withCount('teams')
             ->where('is_listed', true)
-            ->where('id_owner', '!=', $excludeOwnerId)
-            ->when($search, fn ($q) => $q->where('name', 'like', '%'.$search.'%'))
-            ->latest()
-            ->simplePaginate($perPage);
+            ->where('status', '!=', Auction::STATUS_ABANDONED)
+            ->when($search, fn ($q) => $q->where('name', 'like', '%'.$search.'%'));
+
+        match ($status) {
+            'live' => $query->whereIn('status', [Auction::STATUS_LIVE, Auction::STATUS_PAUSED])->orderByDesc('updated_at'),
+            'upcoming' => $query->whereIn('status', [Auction::STATUS_READY, Auction::STATUS_DRAFT])
+                ->whereNotNull('scheduled_at')
+                ->orderBy('scheduled_at'),
+            'past' => $query->where('status', Auction::STATUS_COMPLETED)->orderByDesc('updated_at'),
+            default => $query->where('id_owner', '!=', $excludeOwnerId)->latest(),
+        };
+
+        return $query->orderByDesc('id')->simplePaginate($perPage);
     }
 
     /**

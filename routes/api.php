@@ -5,6 +5,8 @@ use App\Http\Controllers\Auction\InvitationController;
 use App\Http\Controllers\CrickproAuthController;
 use App\Http\Controllers\CrickproController;
 use App\Http\Controllers\Auction\AuctionControlController;
+use App\Http\Controllers\Auction\AuctionFollowController;
+use App\Http\Controllers\Auction\AuctionLiveViewController;
 use App\Http\Controllers\Auction\AuctionController;
 use App\Http\Controllers\Auction\AuctionPlayerController;
 use App\Http\Controllers\Auction\AuctionSettingsController;
@@ -83,6 +85,10 @@ Route::prefix('v1/public/invitations')->middleware('throttle:20,1')->group(funct
     Route::post('{auction}/{token}/join', [InvitationController::class, 'join']);
 });
 
+// Spectator live view (crickpro-app /fixture/{id}/view parity) — any auction by
+// id, login optional. Own limit: venue viewers share one NAT IP.
+Route::get('v1/auctions/{auction}/view/live', [AuctionLiveViewController::class, 'show'])->middleware('throttle:240,1');
+
 Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [AuctionController::class, 'index']);
     Route::get('public', [AuctionController::class, 'publicIndex']);
@@ -101,6 +107,8 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::get('{auction}/overlay-link', [AuctionController::class, 'overlayLink']);
     Route::get('{auction}/overlay-theme', [AuctionController::class, 'overlayTheme']);
     Route::put('{auction}/overlay-theme', [AuctionController::class, 'saveOverlayTheme']);
+    Route::post('{auction}/follow', [AuctionFollowController::class, 'store']);
+    Route::delete('{auction}/follow', [AuctionFollowController::class, 'destroy']);
 
     Route::get('{auction}/state', [AuctionControlController::class, 'state']);
     Route::post('{auction}/control/select-player', [AuctionControlController::class, 'selectPlayer']);
@@ -143,6 +151,9 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::post('{auction}/cover', [UploadController::class, 'auctionCover']);
     Route::post('{auction}/logo', [UploadController::class, 'auctionLogo']);
 });
+
+// The caller's followed auctions (server-side follows, newest first).
+Route::get('v1/me/following', [AuctionFollowController::class, 'index'])->middleware('auth:sanctum');
 
 Route::prefix('v1/integrations/crickpro')->middleware('auth:sanctum')->group(function () {
     Route::get('status', [CrickproController::class, 'status']);

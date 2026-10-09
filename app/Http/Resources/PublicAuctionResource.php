@@ -28,6 +28,8 @@ class PublicAuctionResource extends JsonResource
             'scheduledAt' => $this->scheduled_at,
             'squadMax' => $this->settings?->squad_max,
             'initialPurse' => $this->settings?->initial_purse,
+            'followersCount' => (int) ($this->followers_count ?? 0),
+            'teamsCount' => $this->teams_count !== null ? (int) $this->teams_count : null,
         ];
     }
 }

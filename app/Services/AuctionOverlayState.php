@@ -69,6 +69,8 @@ class AuctionOverlayState
             'purseRemaining' => (int) $t->remaining_purse,
             'boughtCount' => (int) ($bought[$t->id] ?? 0),
             'slotsLeft' => $squadMax > 0 ? max(0, $squadMax - (int) ($bought[$t->id] ?? 0)) : null,
+            // Same rule as TeamRepository::listForAuction — the whole remaining purse.
+            'maxBid' => max(0, (int) $t->remaining_purse),
         ])->values();
 
         $sold = AuctionPlayer::with('player.roleType')->where('id_auction', $auction->id)->where('status', 'sold')->get()
@@ -88,8 +90,30 @@ class AuctionOverlayState
             ->map(fn ($ap) => ['playerId' => $ap->id, 'name' => $ap->player?->name])
             ->values();
 
+        // Most recent result (sold or unsold) — the spectator view shows it
+        // between players so the block card is never empty. Undo clears both
+        // timestamps, so an undone result naturally drops out.
+        $lastAp = AuctionPlayer::with('player.roleType')
+            ->where('id_auction', $auction->id)
+            ->whereIn('status', ['sold', 'unsold'])
+            ->orderByRaw('COALESCE(sold_at, unsold_at) DESC')
+            ->orderByDesc('id')
+            ->first();
+        $lastPlayer = $lastAp ? [
+            'playerId' => $lastAp->id,
+            'name' => $lastAp->player?->name,
+            'photoUrl' => $lastAp->player?->photo_url,
+            'role' => $lastAp->player?->role,
+            'roleType' => $lastAp->player?->roleType?->name,
+            'categoryCode' => $lastAp->category_code,
+            'status' => $lastAp->status,
+            'teamId' => $lastAp->status === 'sold' ? $lastAp->id_sold_to_team : null,
+            'price' => $lastAp->status === 'sold' ? (int) $lastAp->sold_price : null,
+        ] : null;
+
         return [
             'auction' => [
+                'id' => $auction->id,
                 'name' => $auction->name,
                 'logoUrl' => $auction->logo_url,
                 'currencySymbol' => $auction->currency?->symbol ?? '₹',
@@ -111,6 +135,7 @@ class AuctionOverlayState
                 'playerCount' => (int) ($catCounts[$c->code] ?? 0),
             ])->values(),
             'currentPlayer' => $current,
+            'lastPlayer' => $lastPlayer,
             'teams' => $teams,
             'sold' => $sold,
             'unsold' => $unsold,

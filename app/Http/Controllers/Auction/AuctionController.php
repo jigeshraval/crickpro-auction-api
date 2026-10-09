@@ -52,19 +52,21 @@ class AuctionController extends Controller
         ]);
     }
 
-    /** The Dashboard tab's "All Auctions" feed — every listed auction from other organisers. */
+    /** The All Auctions feed — listed auctions, optionally filtered by status tab. */
     public function publicIndex(Request $request): JsonResponse
     {
+        $request->validate(['status' => 'nullable|in:live,upcoming,past']);
+
         $auctions = $this->auctions->paginatePublic(
             $request->user()->id,
             $request->string('search')->value() ?: null,
             (int) $request->integer('perPage', 20),
+            $request->string('status')->value() ?: null,
         );
-        $auctions->through(fn ($auction) => new PublicAuctionResource($auction));
 
         return response()->json([
             'status' => 'success',
-            ...paginated($auctions, 'auctions', true),
+            ...paginated(PublicAuctionResource::collection($auctions), 'auctions', true),
         ]);
     }
 
