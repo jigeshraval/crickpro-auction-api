@@ -158,7 +158,8 @@ class AuctionSpectatorTest extends TestCase
             ->assertJsonPath('data.currentPlayer.status', 'selected')
             ->assertJsonPath('data.lastPlayer', null)
             ->assertJsonPath('data.teams.0.id', $teamA['id'])
-            ->assertJsonPath('data.teams.0.maxBid', 10_000_00)
+            ->assertJsonPath('data.teams.0.initialPurse', 10_000_00)
+            ->assertJsonPath('data.teams.0.highestBuy', null)
             ->assertJsonPath('data.settings.squadMax', 2)
             ->assertJsonPath('data.isFollowing', false)
             ->assertJsonPath('data.followersCount', 0);
@@ -199,7 +200,7 @@ class AuctionSpectatorTest extends TestCase
             ->assertJsonPath('data.lastPlayer.teamId', $teamA['id'])
             ->assertJsonPath('data.lastPlayer.price', 50_000)
             ->assertJsonPath('data.teams.0.boughtCount', 1)
-            ->assertJsonPath('data.teams.0.maxBid', 10_000_00 - 50_000);
+            ->assertJsonPath('data.teams.0.highestBuy', 50_000);
 
         $this->travel(1)->minutes();
         \Illuminate\Support\Facades\Cache::flush(); // bypass the 2s view cache between snapshots

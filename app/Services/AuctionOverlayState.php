@@ -27,6 +27,13 @@ class AuctionOverlayState
             ->groupBy('id_sold_to_team')
             ->pluck('c', 'id_sold_to_team');
 
+        // Highest single purchase per team.
+        $highest = AuctionPlayer::where('id_auction', $auction->id)
+            ->where('status', 'sold')
+            ->selectRaw('id_sold_to_team, max(sold_price) as m')
+            ->groupBy('id_sold_to_team')
+            ->pluck('m', 'id_sold_to_team');
+
         // Players per category (for the set banner).
         $catCounts = AuctionPlayer::where('id_auction', $auction->id)
             ->selectRaw('category_code, count(*) as c')
@@ -69,8 +76,9 @@ class AuctionOverlayState
             'purseRemaining' => (int) $t->remaining_purse,
             'boughtCount' => (int) ($bought[$t->id] ?? 0),
             'slotsLeft' => $squadMax > 0 ? max(0, $squadMax - (int) ($bought[$t->id] ?? 0)) : null,
-            // Same rule as TeamRepository::listForAuction — the whole remaining purse.
-            'maxBid' => max(0, (int) $t->remaining_purse),
+            'initialPurse' => (int) $t->initial_purse,
+            // Most this team has paid for one player (spectator "Max Bid"); null until its first buy.
+            'highestBuy' => isset($highest[$t->id]) ? (int) $highest[$t->id] : null,
         ])->values();
 
         $sold = AuctionPlayer::with('player.roleType')->where('id_auction', $auction->id)->where('status', 'sold')->get()
