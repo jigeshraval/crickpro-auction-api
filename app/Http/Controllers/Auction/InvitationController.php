@@ -3,12 +3,18 @@
 namespace App\Http\Controllers\Auction;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\PublicRegistrationResource;
 use App\Models\Auction;
 use App\Models\AuctionCategory;
 use App\Models\AuctionInvitation;
+use App\Models\PlayerRegistration;
 use App\Repositories\AuctionPlayerRepository;
+use App\Repositories\AuctionSettingRepository;
+use App\Services\Payments\FeeCalculator;
+use App\Services\Payments\RegistrationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -16,13 +22,20 @@ use Illuminate\Support\Str;
  *
  * The organiser generates a link (optionally pinned to a category, which grades
  * everyone who joins through it). The invitee opens the public web page and fills
- * only their identity; category + base price stay server-controlled. New joiners
- * land as `pending` for the organiser to review.
+ * only their identity; category + base price stay server-controlled.
+ *
+ * Registration payments (spec 2026-10-09): when the auction charges a fee, join
+ * creates a PlayerRegistration instead of adding directly — razorpay mode returns
+ * a UPI QR, manual mode returns the organiser's instructions. The player is added
+ * to the pool only once payment is confirmed / the proof is approved.
  */
 class InvitationController extends Controller
 {
     public function __construct(
         private readonly AuctionPlayerRepository $auctionPlayers,
+        private readonly AuctionSettingRepository $settings,
+        private readonly RegistrationService $registrations,
+        private readonly FeeCalculator $fees,
     ) {}
 
     private function url(Auction $auction, string $token): string
@@ -53,7 +66,7 @@ class InvitationController extends Controller
             'id_auction' => $auction->id,
             'token' => Str::random(40),
             'category_code' => $categoryCode,
-            'expires_at' => $request->filled('expiresAt') ? \Illuminate\Support\Carbon::parse($request->input('expiresAt')) : null,
+            'expires_at' => $request->filled('expiresAt') ? Carbon::parse($request->input('expiresAt')) : null,
             'created_by' => $request->user()->id,
         ]);
 
@@ -68,7 +81,7 @@ class InvitationController extends Controller
         ], 201);
     }
 
-    /** Public — the web page loads the invite to show the auction + category. */
+    /** Public — the web page loads the invite to show the auction + category + fee. */
     public function show(Auction $auction, string $token): JsonResponse
     {
         $invitation = AuctionInvitation::where('id_auction', $auction->id)->where('token', $token)->first();
@@ -93,10 +106,11 @@ class InvitationController extends Controller
             ],
             'category' => $category ? ['code' => $category->code, 'name' => $category->name] : null,
             'expiresAt' => optional($invitation->expires_at)->toISOString(),
+            'registration' => $this->registrationInfo($auction),
         ]);
     }
 
-    /** Public — the invitee registers themselves into the auction pool. */
+    /** Public — the invitee registers themselves (directly, or via payment/review). */
     public function join(Request $request, Auction $auction, string $token): JsonResponse
     {
         $invitation = AuctionInvitation::where('id_auction', $auction->id)->where('token', $token)->first();
@@ -116,23 +130,41 @@ class InvitationController extends Controller
             'phone' => 'nullable|string|max:20',
         ]);
 
-        $this->auctionPlayers->add(
-            $auction,
-            array_filter([
-                'name' => trim($data['name']),
-                'role' => $data['role'] ?? 'batter',
-                'batting_style' => $data['battingStyle'] ?? null,
-                'bowling_style' => isset($data['bowlingStyle']) ? trim($data['bowlingStyle']) ?: null : null,
-                'city' => $data['city'] ?? null,
-                'phone' => $data['phone'] ?? null,
-            ], fn ($v) => $v !== null),
-            // Category (and therefore base price) is taken from the invite, not
-            // the client — the joiner can't grade themselves. status -> pending.
-            array_filter(['category_code' => $invitation->category_code], fn ($v) => $v !== null),
-        );
+        $settings = $this->settings->forAuction($auction);
 
-        $invitation->increment('joined_count');
+        if (RegistrationService::effectiveMode($settings) === PlayerRegistration::MODE_NONE) {
+            $this->auctionPlayers->add(
+                $auction,
+                RegistrationService::playerAttributes($data),
+                // Category (and therefore base price) is taken from the invite, not
+                // the client — the joiner can't grade themselves. status -> pending.
+                array_filter(['category_code' => $invitation->category_code], fn ($v) => $v !== null),
+            );
 
-        return response()->json(['status' => 'success', 'message' => "You've joined {$auction->name}."]);
+            $invitation->increment('joined_count');
+
+            return response()->json(['status' => 'success', 'mode' => 'none', 'message' => "You've joined {$auction->name}."]);
+        }
+
+        $registration = $this->registrations->start($auction, $invitation, $settings, $data);
+
+        return response()->json([
+            'status' => 'success',
+            ...(new PublicRegistrationResource($registration))->resolve($request),
+        ], 201);
+    }
+
+    private function registrationInfo(Auction $auction): array
+    {
+        $settings = $this->settings->forAuction($auction);
+        $mode = RegistrationService::effectiveMode($settings);
+
+        return [
+            'mode' => $mode,
+            'fee' => $mode === PlayerRegistration::MODE_NONE ? 0 : (int) $settings->registration_fee,
+            'breakdown' => $mode === PlayerRegistration::MODE_RAZORPAY
+                ? $this->fees->breakdown((int) $settings->registration_fee, (string) $settings->fee_bearer)->toPublicArray()
+                : null,
+        ];
     }
 }

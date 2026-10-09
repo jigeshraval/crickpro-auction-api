@@ -12,6 +12,7 @@ use App\Http\Requests\Auth\ResetPasswordMobileRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\SendEmailOtpRequest;
 use App\Http\Requests\Auth\SendWhatsappOtpRequest;
+use App\Http\Requests\Auth\UpdateUserRequest;
 use App\Http\Requests\Auth\VerifyEmailOtpRequest;
 use App\Http\Requests\Auth\VerifyResetOtpMobileRequest;
 use App\Http\Requests\Auth\VerifyWhatsappOtpRequest;
@@ -22,6 +23,7 @@ use App\Models\PasswordResetCode;
 use App\Models\User;
 use App\Repositories\AuthRepository;
 use App\Services\Auth\AuthTokenService;
+use App\Services\Auth\UserCountry;
 use App\Services\WhatsAppOtpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +44,7 @@ class AuthController extends Controller
         private readonly AuthRepository $auth,
         private readonly AuthTokenService $tokens,
         private readonly WhatsAppOtpService $whatsapp,
+        private readonly UserCountry $country,
     ) {}
 
     public function checkUser(CheckUserRequest $request): JsonResponse
@@ -139,6 +142,7 @@ class AuthController extends Controller
         }
 
         $this->auth->markEmailVerified($user);
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
         $token = $this->tokens->issue($user);
 
         return response()->json([
@@ -201,7 +205,7 @@ class AuthController extends Controller
     {
         $user = $this->auth->findByEmail($this->sanitizeEmail($request->email));
 
-        return $this->attemptLogin($user, $request->password);
+        return $this->attemptLogin($user, $request->password, $request);
     }
 
     public function loginPasswordMobile(LoginPasswordMobileRequest $request): JsonResponse
@@ -209,10 +213,10 @@ class AuthController extends Controller
         $mobile = $this->formatMobile($request->mobile, $request->phoneCode);
         $user = $this->auth->findByMobile($mobile);
 
-        return $this->attemptLogin($user, $request->password);
+        return $this->attemptLogin($user, $request->password, $request);
     }
 
-    private function attemptLogin(?User $user, string $password): JsonResponse
+    private function attemptLogin(?User $user, string $password, Request $request): JsonResponse
     {
         if (! $user || ! $user->password || ! Hash::check($password, $user->password)) {
             return $this->error('Invalid credentials', 400);
@@ -221,6 +225,9 @@ class AuthController extends Controller
         if ($blocked = $this->blockedResponse($user)) {
             return $blocked;
         }
+
+        // Only overwrites when the app sent a country.
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
 
         $token = $this->tokens->issue($user);
 
@@ -271,6 +278,7 @@ class AuthController extends Controller
         }
 
         $this->auth->updatePassword($user, $request->password);
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
         $this->auth->consumeCode($resetCode);
 
         $token = $this->tokens->issue($user);
@@ -304,6 +312,7 @@ class AuthController extends Controller
         }
 
         $this->auth->updatePassword($user, $request->password);
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
         $this->auth->consumeCode($resetCode);
 
         $token = $this->tokens->issue($user);
@@ -355,6 +364,7 @@ class AuthController extends Controller
             'verified' => true,
             'email_verified_at' => $email ? now() : null,
         ]);
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
 
         if ($request->hasFile('profileImage')) {
             $path = $request->file('profileImage')->store('profile-images/'.$user->id, 'public');
@@ -378,6 +388,15 @@ class AuthController extends Controller
             'status' => 'success',
             'user' => new UserResource($request->user()),
         ]);
+    }
+
+    /** PATCH v1/auth/user — sync the country for sessions created before it was stored. */
+    public function updateUser(UpdateUserRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
+
+        return response()->json(['status' => 'success', 'user' => new UserResource($user->refresh())]);
     }
 
     public function logout(Request $request): JsonResponse

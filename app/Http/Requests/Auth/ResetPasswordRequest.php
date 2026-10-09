@@ -18,6 +18,8 @@ class ResetPasswordRequest extends FormRequest
             'otp' => 'required|string|size:6',
             'password' => 'required|string|min:8|max:128',
             'password_confirmation' => 'required|same:password',
+            'countryCode' => 'nullable|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
         ];
     }
 }

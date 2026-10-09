@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'bid_increment_mode', 'bid_increment_flat', 'bid_increment_slabs', 'max_overseas_per_team',
     'enforce_squad_max', 'enforce_purse', 'enforce_overseas', 'enforce_squad_min',
     'allow_reentry', 'allow_custom_bid', 'player_fields',
+    'registration_mode', 'registration_fee', 'fee_bearer', 'manual_instructions', 'manual_qr_url',
 ])]
 class AuctionSetting extends Model
 {
@@ -23,6 +24,7 @@ class AuctionSetting extends Model
         return [
             'bid_increment_slabs' => 'array',
             'player_fields' => 'array',
+            'registration_fee' => 'integer',
             'enforce_squad_max' => 'boolean',
             'enforce_purse' => 'boolean',
             'enforce_overseas' => 'boolean',

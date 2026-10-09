@@ -21,10 +21,15 @@ class SubscriptionHistory extends Model
     protected $table = 'subscription_history';
 
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_EXPIRED = 'expired';
+
     public const STATUS_REFUNDED = 'refunded';
+
     public const STATUS_CANCELLED = 'cancelled';
+
     public const STATUS_DELETED = 'deleted';
 
     protected function casts(): array

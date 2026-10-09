@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ops.signature' => \App\Http\Middleware\VerifyOpsSignature::class,
             'overlay.signature' => \App\Http\Middleware\VerifyOverlaySignature::class,
             'crickpro.signature' => \App\Http\Middleware\VerifyCrickproSignature::class,
+            'payments.eligible' => \App\Http\Middleware\EnsureRegistrationPaymentsAvailable::class,
         ]);
 
         // Pure JSON API — there is no 'login' route to redirect guests to.

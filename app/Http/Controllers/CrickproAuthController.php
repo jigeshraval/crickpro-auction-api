@@ -10,6 +10,7 @@ use App\Repositories\AuctionRepository;
 use App\Repositories\AuthRepository;
 use App\Repositories\TeamRepository;
 use App\Services\Auth\AuthTokenService;
+use App\Services\Auth\UserCountry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,7 @@ class CrickproAuthController extends Controller
         private readonly AuthTokenService $tokens,
         private readonly AuctionRepository $auctions,
         private readonly TeamRepository $teams,
+        private readonly UserCountry $country,
     ) {}
 
     private function base(): ?string
@@ -53,7 +55,11 @@ class CrickproAuthController extends Controller
     /** App-side: exchange a crickpro-app handoff token for an auction session. */
     public function connect(Request $request): JsonResponse
     {
-        $request->validate(['token' => 'required|string']);
+        $request->validate([
+            'token' => 'required|string',
+            'countryCode' => 'nullable|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
+        ]);
 
         if (! $this->base()) {
             return response()->json(['status' => 'error', 'message' => 'CrickPro connect is not configured.'], 503);
@@ -73,6 +79,8 @@ class CrickproAuthController extends Controller
             $res->json('user.thumb'),
             $request->token,
         );
+
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
 
         $token = $this->tokens->issue($user);
 
@@ -98,6 +106,8 @@ class CrickproAuthController extends Controller
         $request->validate([
             'userId' => 'required|integer',
             'accessCode' => 'required|string|size:8',
+            'countryCode' => 'nullable|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
         ]);
 
         $userId = (int) $request->userId;
@@ -139,6 +149,8 @@ class CrickproAuthController extends Controller
             $cpUser->thumb ?? null,
             null,
         );
+
+        $this->country->apply($user, $request->input('countryCode'), $request->input('countryName'));
 
         $token = $this->tokens->issue($user);
 

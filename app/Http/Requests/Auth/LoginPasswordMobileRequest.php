@@ -17,6 +17,8 @@ class LoginPasswordMobileRequest extends FormRequest
             'mobile' => 'required|string',
             'phoneCode' => 'required|string',
             'password' => 'required|string',
+            'countryCode' => 'nullable|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
         ];
     }
 }

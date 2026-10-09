@@ -19,7 +19,8 @@ class RegisterRequest extends FormRequest
             'mobile' => 'nullable|string|max:20|required_without:email',
             'phoneCode' => 'nullable|string|max:5|required_with:mobile',
             'password' => 'required|string|min:8|max:128',
-            'countryCode' => 'required|string|max:5',
+            'countryCode' => 'required|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
             'termsAccepted' => 'required',
             'profileImage' => 'nullable|image|max:5120',
         ];

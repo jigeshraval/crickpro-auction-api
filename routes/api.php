@@ -1,26 +1,37 @@
 <?php
 
 use App\Http\Controllers\Auction\AuctionCategoryController;
-use App\Http\Controllers\Auction\InvitationController;
-use App\Http\Controllers\CrickproAuthController;
-use App\Http\Controllers\CrickproController;
 use App\Http\Controllers\Auction\AuctionControlController;
+use App\Http\Controllers\Auction\AuctionController;
 use App\Http\Controllers\Auction\AuctionFollowController;
 use App\Http\Controllers\Auction\AuctionLiveViewController;
-use App\Http\Controllers\Auction\AuctionController;
 use App\Http\Controllers\Auction\AuctionPlayerController;
 use App\Http\Controllers\Auction\AuctionSettingsController;
+use App\Http\Controllers\Auction\InvitationController;
 use App\Http\Controllers\Auction\OverlayController;
 use App\Http\Controllers\Auction\PublicAuctionController;
 use App\Http\Controllers\Auction\TeamController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\CityController;
+use App\Http\Controllers\CrickproAuthController;
+use App\Http\Controllers\CrickproController;
 use App\Http\Controllers\Ops\OpsSubscriptionController;
+use App\Http\Controllers\Ops\OpsUserController;
+use App\Http\Controllers\Payments\CollectionController;
+use App\Http\Controllers\Payments\PayoutAccountController;
+use App\Http\Controllers\Payments\PublicRegistrationController;
+use App\Http\Controllers\Payments\RazorpayWebhookController;
+use App\Http\Controllers\Payments\RefundController;
+use App\Http\Controllers\Payments\RegistrationApprovalController;
+use App\Http\Controllers\Payments\RegistrationSettingsController;
+use App\Http\Controllers\Payments\WalletController;
+use App\Http\Controllers\Payments\WithdrawalController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\PlayerController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\UploadController;
 use App\Http\Controllers\WhatsAppWebhookController;
+use App\Models\RoleType;
 use Illuminate\Support\Facades\Route;
 
 // Meta calls these directly (GET handshake, POST inbound messages) — no
@@ -61,6 +72,7 @@ Route::prefix('v1/auth')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('user', [AuthController::class, 'user']);
+        Route::patch('user', [AuthController::class, 'updateUser']);
         Route::post('logout', [AuthController::class, 'logout']);
         Route::delete('account', [AuthController::class, 'deleteAccount']);
     });
@@ -83,6 +95,14 @@ Route::prefix('v1/public/auctions')->middleware('throttle:30,1')->group(function
 Route::prefix('v1/public/invitations')->middleware('throttle:20,1')->group(function () {
     Route::get('{auction}/{token}', [InvitationController::class, 'show']);
     Route::post('{auction}/{token}/join', [InvitationController::class, 'join']);
+});
+
+// Public registration status / payment — the registration token is the credential.
+// GET is polled every 3 s by the player page (venue NAT → generous limit).
+Route::prefix('v1/public/registrations/{registrationToken}')->group(function () {
+    Route::get('/', [PublicRegistrationController::class, 'show'])->middleware('throttle:120,1');
+    Route::post('new-qr', [PublicRegistrationController::class, 'newQr'])->middleware('throttle:10,1');
+    Route::post('proof', [PublicRegistrationController::class, 'proof'])->middleware('throttle:10,1');
 });
 
 // Spectator live view (crickpro-app /fixture/{id}/view parity) — any auction by
@@ -125,6 +145,19 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::get('{auction}/settings', [AuctionSettingsController::class, 'show']);
     Route::put('{auction}/settings', [AuctionSettingsController::class, 'update']);
 
+    // Registration payments (owner) — spec §1/§2. India-only (payments.eligible).
+    Route::middleware('payments.eligible')->group(function () {
+        Route::get('{auction}/registration-settings', [RegistrationSettingsController::class, 'show']);
+        Route::put('{auction}/registration-settings', [RegistrationSettingsController::class, 'update']);
+        Route::post('{auction}/registration-settings/qr', [RegistrationSettingsController::class, 'uploadQr']);
+        Route::get('{auction}/fee-preview', [RegistrationSettingsController::class, 'feePreview']);
+    });
+
+    Route::get('{auction}/registrations', [RegistrationApprovalController::class, 'index']);
+    Route::post('{auction}/registrations/{registration}/approve', [RegistrationApprovalController::class, 'approve']);
+    Route::post('{auction}/registrations/{registration}/reject', [RegistrationApprovalController::class, 'reject']);
+    Route::get('{auction}/collections', [CollectionController::class, 'index']);
+
     Route::get('{auction}/teams', [TeamController::class, 'index']);
     Route::post('{auction}/teams', [TeamController::class, 'store']);
     Route::patch('{auction}/teams/{team}', [TeamController::class, 'update']);
@@ -155,6 +188,20 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
 // The caller's followed auctions (server-side follows, newest first).
 Route::get('v1/me/following', [AuctionFollowController::class, 'index'])->middleware('auth:sanctum');
 
+// Organiser wallet (registration collections → RazorpayX withdrawals).
+Route::prefix('v1/wallet')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [WalletController::class, 'show']);
+    Route::get('ledger', [WalletController::class, 'ledger']);
+    Route::get('payout-accounts', [PayoutAccountController::class, 'index']);
+    Route::post('payout-accounts', [PayoutAccountController::class, 'store'])->middleware('throttle:10,1');
+    Route::delete('payout-accounts/{payoutAccount}', [PayoutAccountController::class, 'destroy']);
+    Route::get('withdrawals', [WithdrawalController::class, 'index']);
+    Route::post('withdrawals', [WithdrawalController::class, 'store'])->middleware('throttle:10,1');
+});
+
+// Organiser refunds a registration payment (fees included for the player).
+Route::post('v1/payments/{payment}/refund', [RefundController::class, 'store'])->middleware(['auth:sanctum', 'throttle:20,1']);
+
 Route::prefix('v1/integrations/crickpro')->middleware('auth:sanctum')->group(function () {
     Route::get('status', [CrickproController::class, 'status']);
     Route::post('connect', [CrickproController::class, 'connect']);
@@ -171,7 +218,7 @@ Route::prefix('v1/integrations/crickpro')->middleware('auth:sanctum')->group(fun
 });
 
 // Player role types — static reference for registration / add-player forms (public).
-Route::get('v1/role-types', fn () => response()->json(['status' => 'success', 'roleTypes' => \App\Models\RoleType::orderBy('sort_order')->get(['id', 'name', 'short'])]));
+Route::get('v1/role-types', fn () => response()->json(['status' => 'success', 'roleTypes' => RoleType::orderBy('sort_order')->get(['id', 'name', 'short'])]));
 
 Route::prefix('v1/players')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [PlayerController::class, 'index']);
@@ -200,9 +247,16 @@ Route::prefix('v1/overlay')->middleware(['overlay.signature', 'throttle:240,1'])
 // RevenueCat webhook — the entitlement source of truth (bearer-token gated).
 Route::post('v1/webhook/revenue-cat', [PaymentWebhookController::class, 'revenueCat']);
 
+// Razorpay (PG) + RazorpayX webhooks — HMAC-signed raw body (X-Razorpay-Signature),
+// no Sanctum. Own IP rate limit; Razorpay retries on non-2xx.
+Route::prefix('v1/webhook')->middleware('throttle:1200,1')->group(function () {
+    Route::post('razorpay', [RazorpayWebhookController::class, 'gateway']);
+    Route::post('razorpayx', [RazorpayWebhookController::class, 'payouts']);
+});
+
 // crickpro-admin subscription management (X-Ops-Signature gated).
 Route::prefix('v1/ops')->middleware('ops.signature')->group(function () {
-    Route::get('users', [\App\Http\Controllers\Ops\OpsUserController::class, 'index']);
+    Route::get('users', [OpsUserController::class, 'index']);
     Route::get('subscriptions', [OpsSubscriptionController::class, 'index']);
     Route::post('subscriptions', [OpsSubscriptionController::class, 'store']);
     Route::delete('subscriptions/{id}', [OpsSubscriptionController::class, 'destroy']);

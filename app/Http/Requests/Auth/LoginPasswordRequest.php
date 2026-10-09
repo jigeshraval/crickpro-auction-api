@@ -16,6 +16,8 @@ class LoginPasswordRequest extends FormRequest
         return [
             'email' => 'required|email',
             'password' => 'required|string',
+            'countryCode' => 'nullable|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
         ];
     }
 }

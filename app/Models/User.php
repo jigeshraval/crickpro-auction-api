@@ -7,13 +7,14 @@ use DateTimeInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Sanctum\NewAccessToken;
 
-#[Fillable(['name', 'email', 'mobile', 'masked_mobile', 'password', 'email_verified_at', 'verified', 'status', 'block_reason', 'uid', 'profile_image'])]
+#[Fillable(['name', 'email', 'mobile', 'masked_mobile', 'password', 'email_verified_at', 'verified', 'status', 'block_reason', 'uid', 'profile_image', 'country', 'id_country'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -32,6 +33,15 @@ class User extends Authenticatable
             'password' => 'hashed',
             'verified' => 'boolean',
         ];
+    }
+
+    /**
+     * The local `countries` row. Named countryRecord (not country) because
+     * `country` is the ISO2 column and Eloquent would shadow one with the other.
+     */
+    public function countryRecord(): BelongsTo
+    {
+        return $this->belongsTo(Country::class, 'id_country');
     }
 
     /**

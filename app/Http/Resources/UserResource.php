@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\Payments\RegistrationPaymentsEligibility;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,6 +18,11 @@ class UserResource extends JsonResource
             'emailVerifiedAt' => $this->email_verified_at,
             'verified' => (bool) $this->verified,
             'profileImageUrl' => $this->profile_image ? asset('storage/'.$this->profile_image) : null,
+            'country' => $this->country,
+            'countryId' => $this->id_country,
+            'features' => [
+                'registrationPayments' => RegistrationPaymentsEligibility::forOwner($this->resource),
+            ],
             'createdAt' => $this->created_at,
         ];
     }

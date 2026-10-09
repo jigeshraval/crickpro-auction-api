@@ -16,6 +16,8 @@ class VerifyEmailOtpRequest extends FormRequest
         return [
             'email' => 'required|email|max:255',
             'otp' => 'required|string|size:6',
+            'countryCode' => 'nullable|string|size:2|regex:/^[A-Za-z]{2}$/',
+            'countryName' => 'nullable|string|max:100',
         ];
     }
 }

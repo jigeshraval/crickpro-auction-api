@@ -38,5 +38,13 @@
              calls on every run. -->
         <env name="WHATSAPP_API_TOKEN" value=""/>
         <env name="WHATSAPP_PHONE_NUMBER_ID" value=""/>
+        <!-- Never let tests reach a real Razorpay account from a developer .env.
+             Tests set fake credentials via config() and use Http::fake(). -->
+        <env name="RAZORPAY_KEY_ID" value=""/>
+        <env name="RAZORPAY_KEY_SECRET" value=""/>
+        <env name="RAZORPAY_WEBHOOK_SECRET" value=""/>
+        <env name="RAZORPAYX_ACCOUNT_NUMBER" value=""/>
+        <env name="RAZORPAYX_WEBHOOK_SECRET" value=""/>
+        <env name="PAYMENTS_OPS_EMAIL" value=""/>
     </php>
 </phpunit>
