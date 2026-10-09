@@ -20,6 +20,8 @@ class UserResource extends JsonResource
             'profileImageUrl' => $this->profile_image ? asset('storage/'.$this->profile_image) : null,
             'country' => $this->country,
             'countryId' => $this->id_country,
+            // Pre-selects the app's "confirm your country" prompt; only while no country is set.
+            'suggestedCountry' => $this->country ? null : cfCountry(),
             'features' => [
                 'registrationPayments' => RegistrationPaymentsEligibility::forOwner($this->resource),
             ],

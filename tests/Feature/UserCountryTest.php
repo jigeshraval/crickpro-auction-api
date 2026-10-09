@@ -108,6 +108,26 @@ class UserCountryTest extends TestCase
         $this->withoutHeader('Authorization')->patchJson('/v1/auth/user', ['countryCode' => 'IN'])->assertUnauthorized();
     }
 
+    public function test_suggested_country_comes_from_cloudflare_only_while_unset(): void
+    {
+        User::factory()->create(['email' => 'org@example.com', 'password' => bcrypt('Passw0rd1')]);
+        $token = $this->login()->json('token');
+        $auth = fn () => $this->withHeader('Authorization', "Bearer {$token}");
+
+        $auth()->withHeader('CF-IPCountry', 'in')->getJson('/v1/auth/user')
+            ->assertOk()->assertJsonPath('user.country', null)->assertJsonPath('user.suggestedCountry', 'IN');
+
+        // Cloudflare's unknown / Tor codes and a missing header suggest nothing.
+        $auth()->withHeader('CF-IPCountry', 'XX')->getJson('/v1/auth/user')->assertJsonPath('user.suggestedCountry', null);
+        $auth()->withHeader('CF-IPCountry', 'T1')->getJson('/v1/auth/user')->assertJsonPath('user.suggestedCountry', null);
+        $auth()->withoutHeader('CF-IPCountry')->getJson('/v1/auth/user')->assertJsonPath('user.suggestedCountry', null);
+
+        // Once the user has a country, no suggestion.
+        $auth()->patchJson('/v1/auth/user', ['countryCode' => 'AE', 'countryName' => 'United Arab Emirates'])->assertOk();
+        $auth()->withHeader('CF-IPCountry', 'IN')->getJson('/v1/auth/user')
+            ->assertJsonPath('user.country', 'AE')->assertJsonPath('user.suggestedCountry', null);
+    }
+
     public function test_backfill_marks_plus_91_mobiles_as_india(): void
     {
         $indian = User::factory()->create(['mobile' => '+919876543210']);
