@@ -116,7 +116,8 @@ jobs:
 
                                 # Reference-data seeders (currencies + overlay templates) are
                                 # idempotent (updateOrCreate / firstOrCreate) — safe every deploy.
-                                /usr/bin/php8.4 artisan db:seed --force
+                                # /usr/bin/php8.4 artisan db:seed --force
+                                /usr/bin/php8.4 artisan db:seed --class=GeoSeeder --force
 
                                 /usr/bin/php8.4 artisan cache:clear
                                 /usr/bin/php8.4 artisan optimize
