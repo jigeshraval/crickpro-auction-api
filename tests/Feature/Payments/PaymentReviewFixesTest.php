@@ -256,14 +256,16 @@ class PaymentReviewFixesTest extends TestCase
         [, $registration, $payment] = $this->joined();
         $this->pay($payment, 'pay_FEE', 52_300, fee: 52_000);
 
+        // Player bore the fees: CrickPro's platform fee absorbs the shortfall first and the
+        // organiser keeps what Razorpay left (300 paise), never more; ops are alerted.
         $payment->refresh();
-        $this->assertSame(0, $payment->organiser_net);
+        $this->assertSame(300, $payment->organiser_net);
         $this->assertSame('completed', $registration->fresh()->status);
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'collection', 'amount' => 0]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'collection', 'amount' => 300]);
         Mail::assertSent(OpsAlertMail::class);
 
-        // Refund then works and debits nothing (share() never sees a negative portion).
-        $this->as($this->owner)->postJson("/v1/payments/{$payment->id}/refund")->assertOk()->assertJsonPath('refund.organiserDebit', 0);
+        // Refund debits exactly what the organiser received.
+        $this->as($this->owner)->postJson("/v1/payments/{$payment->id}/refund")->assertOk()->assertJsonPath('refund.organiserDebit', 300);
     }
 
     // ── I2: disputes are capped; lost is terminal; won restores ─────────────

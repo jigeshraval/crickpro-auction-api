@@ -139,9 +139,15 @@ class PayoutAccountService
             && in_array($results['account_status'] ?? null, ['active', 'valid'], true);
 
         if (! $ok) {
+            Log::info('payout_account.validation_failed', [
+                'payout_account_id' => $account->id,
+                'status' => $validation['status'] ?? null,
+                'account_status' => $results['account_status'] ?? null,
+            ]);
             $account->update([
                 'status' => PayoutAccount::STATUS_FAILED,
-                'failure_reason' => 'Account could not be verified ('.($results['account_status'] ?? $validation['status'] ?? 'failed').').',
+                // Generic for the organiser; RazorpayX's raw status is only logged.
+                'failure_reason' => 'We could not verify this account. Check the details and add it again.',
             ]);
 
             return;

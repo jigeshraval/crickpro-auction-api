@@ -43,7 +43,7 @@ class FeeCalculatorTest extends TestCase
         $this->assertSame(52_300, $b->totalAmount);       // ceil(510 / 0.9764) = ₹523
         $this->assertSame(1300, $b->gatewayFee);          // T − B − P
         $this->assertSame(1234, $b->estimatedGatewayFee); // 523 × 0.0236 = 12.34
-        $this->assertSame(50_066, $b->organiserNet);
+        $this->assertSame(50_000, $b->organiserNet);
         $this->assertSame([
             'baseAmount' => 50_000, 'platformFee' => 1000, 'gatewayFee' => 1300,
             'totalAmount' => 52_300, 'feeBearer' => 'player', 'currency' => 'INR',

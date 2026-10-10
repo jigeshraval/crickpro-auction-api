@@ -69,11 +69,11 @@ class PaymentCompletionTest extends TestCase
         $this->assertSame('pay_A', $payment->razorpay_payment_id);
         $this->assertSame(1234, $payment->gateway_fee);
         $this->assertSame(188, $payment->gateway_tax);
-        $this->assertSame(50_066, $payment->organiser_net); // 52300 − 1000 − 1234
+        $this->assertSame(50_000, $payment->organiser_net); // 52300 − 1000 − 1234
         $this->assertTrue($payment->available_at->isSameMinute(now()->addDays(3)));
 
         $this->assertSame(1, WalletLedger::count());
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'collection', 'amount' => 50_066, 'idempotency_key' => "collection:{$payment->id}"]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'collection', 'amount' => 50_000, 'idempotency_key' => "collection:{$payment->id}"]);
         $this->assertDatabaseCount('auction_players', 1);
         $this->assertSame('completed', PlayerRegistration::first()->status);
         $this->assertDatabaseHas('auction_invitations', ['joined_count' => 1]);

@@ -38,17 +38,17 @@ class WalletEndpointsTest extends TestCase
         $this->paidRegistration($this->owner);
 
         $this->as($this->owner)->getJson('/v1/wallet')
-            ->assertJsonPath('wallet.balance', 50_066)
-            ->assertJsonPath('wallet.pending', 50_066)
+            ->assertJsonPath('wallet.balance', 50_000)
+            ->assertJsonPath('wallet.pending', 50_000)
             ->assertJsonPath('wallet.available', 0)
-            ->assertJsonPath('wallet.totals.collected', 50_066)
+            ->assertJsonPath('wallet.totals.collected', 50_000)
             ->assertJsonPath('wallet.canWithdraw', false);
 
         $this->travel(3)->days();
         $this->travel(1)->minutes();
 
         $this->as($this->owner)->getJson('/v1/wallet')
-            ->assertJsonPath('wallet.available', 50_066)
+            ->assertJsonPath('wallet.available', 50_000)
             ->assertJsonPath('wallet.pending', 0)
             ->assertJsonPath('wallet.canWithdraw', true);
     }
@@ -62,7 +62,7 @@ class WalletEndpointsTest extends TestCase
             ->assertJsonPath('currentPage', 1)
             ->assertJsonPath('nextPage', null)
             ->assertJsonPath('items.0.type', 'collection')
-            ->assertJsonPath('items.0.amount', 50_066)
+            ->assertJsonPath('items.0.amount', 50_000)
             ->assertJsonPath('items.0.isPending', true)
             ->assertJsonPath('items.0.description', 'Registration fee — Rahul Player');
     }

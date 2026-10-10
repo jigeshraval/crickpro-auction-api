@@ -90,6 +90,17 @@ class PaymentCompletionService
             }
 
             $net = $amount - $payment->platform_fee - $fee; // actuals win
+            if ($payment->fee_bearer === FeeCalculator::BEARER_PLAYER) {
+                // Player bore the fees: the organiser gets exactly the registration fee;
+                // the round-up surplus is CrickPro's, and an actual-fee shortfall comes
+                // out of CrickPro's platform fee first (never more than what's left).
+                $net = min($payment->base_amount, $amount - $fee);
+                if ($net < $payment->base_amount) {
+                    $this->alerts->send('Gateway fee left less than the registration fee for the organiser', [
+                        'registrationPaymentId' => $payment->id, 'amount' => $amount, 'baseAmount' => $payment->base_amount, 'gatewayFee' => $fee, 'organiserNet' => max(0, $net),
+                    ]);
+                }
+            }
             if ($net < 0) {
                 // Actual gateway fee exceeded what the platform fee left over —
                 // the organiser is never charged for it (and share() never sees a negative portion).

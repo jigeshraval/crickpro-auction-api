@@ -125,8 +125,8 @@ class WalletServiceTest extends TestCase
     public function test_pending_credit_covering_a_debit_does_not_alert(): void
     {
         Mail::fake();
-        $this->wallet->post($this->owner, WalletLedger::TYPE_COLLECTION, 50_066, now()->addDays(3), null, null, 'k1');
-        $this->wallet->post($this->owner, WalletLedger::TYPE_REFUND, -50_066, now(), null, null, 'k2');
+        $this->wallet->post($this->owner, WalletLedger::TYPE_COLLECTION, 50_000, now()->addDays(3), null, null, 'k1');
+        $this->wallet->post($this->owner, WalletLedger::TYPE_REFUND, -50_000, now(), null, null, 'k2');
 
         $this->wallet->alertIfNegative($this->owner);
 

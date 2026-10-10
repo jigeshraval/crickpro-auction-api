@@ -112,12 +112,12 @@ class ApprovalsAndCollectionsTest extends TestCase
             ->assertJsonPath('items.0.totalAmount', 52_300)
             ->assertJsonPath('items.0.platformFee', 1000)
             ->assertJsonPath('items.0.gatewayFee', 1234)
-            ->assertJsonPath('items.0.organiserNet', 50_066)
+            ->assertJsonPath('items.0.organiserNet', 50_000)
             ->assertJsonPath('items.0.refundableAmount', 52_300)
             ->assertJsonPath('items.0.status', 'paid')
             ->assertJsonPath('summary.count', 1)
             ->assertJsonPath('summary.collected', 52_300)
-            ->assertJsonPath('summary.organiserNet', 50_066);
+            ->assertJsonPath('summary.organiserNet', 50_000);
     }
 
     public function test_manual_approved_payment_appears_in_collections_without_refund(): void

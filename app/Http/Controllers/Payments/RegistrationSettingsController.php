@@ -11,7 +11,9 @@ use App\Models\AuctionSetting;
 use App\Repositories\AuctionSettingRepository;
 use App\Services\ImageStorage;
 use App\Services\Payments\FeeCalculator;
+use App\Services\Payments\RegistrationPaymentsEligibility;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /** Auction → Settings → "Registration Payments" (owner only). */
 class RegistrationSettingsController extends Controller
@@ -69,6 +71,29 @@ class RegistrationSettingsController extends Controller
     /** Live preview while the organiser types a fee (before saving). */
     public function feePreview(ShowAuctionRequest $request, Auction $auction): JsonResponse
     {
+        $data = $request->validate([
+            'amount' => 'required|integer|min:'.config('payments.min_registration_fee').'|max:'.config('payments.max_registration_fee'),
+            'feeBearer' => 'required|string|in:organiser,player',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'breakdown' => $this->fees->breakdown((int) $data['amount'], $data['feeBearer'])->toArray(),
+        ]);
+    }
+
+    /**
+     * Fee preview for a signed-in organiser before any auction exists (the Create
+     * Auction form). India-only, same as the per-auction preview.
+     */
+    public function userFeePreview(Request $request): JsonResponse
+    {
+        abort_unless(
+            RegistrationPaymentsEligibility::forOwner($request->user()),
+            403,
+            RegistrationPaymentsEligibility::MESSAGE,
+        );
+
         $data = $request->validate([
             'amount' => 'required|integer|min:'.config('payments.min_registration_fee').'|max:'.config('payments.max_registration_fee'),
             'feeBearer' => 'required|string|in:organiser,player',

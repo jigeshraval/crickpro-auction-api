@@ -47,9 +47,9 @@ class DisputeTest extends TestCase
         $this->dispute('payment.dispute.created'); // retried with a new event id
 
         $this->assertSame(1, WalletLedger::where('type', 'dispute_hold')->count());
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_hold', 'amount' => -50_066]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_hold', 'amount' => -50_000]);
         $this->assertSame('disputed', $this->payment->fresh()->status);
-        $this->assertDatabaseHas('payment_disputes', ['razorpay_dispute_id' => 'disp_1', 'status' => 'open', 'organiser_hold' => 50_066]);
+        $this->assertDatabaseHas('payment_disputes', ['razorpay_dispute_id' => 'disp_1', 'status' => 'open', 'organiser_hold' => 50_000]);
         $this->assertSame(0, $this->ownerBalance());
     }
 
@@ -57,7 +57,7 @@ class DisputeTest extends TestCase
     {
         $this->dispute('payment.dispute.created', 10_000);
 
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_hold', 'amount' => -9573]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_hold', 'amount' => -9560]);
     }
 
     public function test_won_releases_the_hold_and_restores_the_status(): void
@@ -67,7 +67,7 @@ class DisputeTest extends TestCase
         $this->dispute('payment.dispute.won');
 
         $this->assertSame(1, WalletLedger::where('type', 'dispute_release')->count());
-        $this->assertSame(50_066, $this->ownerBalance());
+        $this->assertSame(50_000, $this->ownerBalance());
         $this->assertSame('paid', $this->payment->fresh()->status);
         $this->assertDatabaseHas('payment_disputes', ['razorpay_dispute_id' => 'disp_1', 'status' => 'won']);
     }
@@ -77,8 +77,8 @@ class DisputeTest extends TestCase
         $this->dispute('payment.dispute.created');
         $this->dispute('payment.dispute.lost');
 
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_release', 'amount' => 50_066]);
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_loss', 'amount' => -50_066]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_release', 'amount' => 50_000]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'dispute_loss', 'amount' => -50_000]);
         $this->assertSame(0, $this->ownerBalance());
         $this->assertSame('dispute_lost', $this->payment->fresh()->status); // terminal (review 2, I2)
         $this->assertDatabaseHas('payment_disputes', ['razorpay_dispute_id' => 'disp_1', 'status' => 'lost']);

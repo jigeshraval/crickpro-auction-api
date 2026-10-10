@@ -57,7 +57,7 @@ class RazorpayWebhookTest extends TestCase
 
         $this->assertSame('completed', PlayerRegistration::first()->status);
         $this->assertSame(1, WalletLedger::count());
-        $this->assertDatabaseHas('wallet_ledger', ['amount' => 50_066]);
+        $this->assertDatabaseHas('wallet_ledger', ['amount' => 50_000]);
         $this->assertDatabaseCount('auction_players', 1);
         $this->assertSame(2, RazorpayWebhookEvent::count());
         $this->assertNotNull(RazorpayWebhookEvent::where('event_id', 'evt_1')->first()->processed_at);

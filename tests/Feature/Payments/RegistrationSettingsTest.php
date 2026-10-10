@@ -44,7 +44,7 @@ class RegistrationSettingsTest extends TestCase
             ->assertJsonPath('registrationSettings.registrationFee', 50_000)
             ->assertJsonPath('preview.totalAmount', 52_300)
             ->assertJsonPath('preview.gatewayFee', 1300)
-            ->assertJsonPath('preview.organiserNet', 50_066);
+            ->assertJsonPath('preview.organiserNet', 50_000);
 
         $this->assertDatabaseHas('auction_settings', [
             'id_auction' => $this->auction['id'], 'registration_mode' => 'razorpay', 'registration_fee' => 50_000, 'fee_bearer' => 'player',
@@ -76,6 +76,20 @@ class RegistrationSettingsTest extends TestCase
     {
         $this->as($this->owner)->getJson("/v1/auctions/{$this->auction['id']}/registration-settings")
             ->assertOk()->assertJsonPath('eligible', true);
+    }
+
+    public function test_user_fee_preview_works_before_an_auction_exists(): void
+    {
+        $this->as($this->owner)->getJson('/v1/payments/fee-preview?amount=50000&feeBearer=player')
+            ->assertOk()
+            ->assertJsonPath('breakdown.totalAmount', 52_300)
+            ->assertJsonPath('breakdown.organiserNet', 50_000);
+
+        $this->as($this->owner)->getJson('/v1/payments/fee-preview?amount=4000&feeBearer=player')->assertUnprocessable();
+
+        $uae = $this->tokenFor('uae-preview@example.com', 'AE');
+        $this->as($uae)->getJson('/v1/payments/fee-preview?amount=50000&feeBearer=player')
+            ->assertForbidden()->assertJsonPath('message', 'Registration payments are only available in India.');
     }
 
     public function test_non_indian_owner_gets_403_on_every_settings_endpoint(): void

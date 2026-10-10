@@ -209,9 +209,17 @@ class RefundService
     {
         $cumulative = $payment->refunded_amount + $amount;
         $organiser = $this->fees->share($cumulative, $payment->total_amount, $payment->organiser_net) - $payment->organiser_refunded;
-        $platform = $this->fees->share($cumulative, $payment->total_amount, $payment->platform_fee) - $payment->platform_fee_refunded;
+        // Gateway gets its proportional share of Razorpay's actual fee; CrickPro's
+        // platform portion is the remainder (platform fee + any player-bearer
+        // round-up surplus), so it never goes negative from rounding.
+        $gateway = $this->fees->share($cumulative, $payment->total_amount, $payment->gateway_fee) - $payment->gateway_fee_refunded;
+        $platform = $amount - $organiser - $gateway;
+        if ($platform < 0) {
+            $gateway += $platform;
+            $platform = 0;
+        }
 
-        return ['organiser' => $organiser, 'platform' => $platform, 'gateway' => $amount - $organiser - $platform];
+        return ['organiser' => $organiser, 'platform' => $platform, 'gateway' => $gateway];
     }
 
     private function paymentFor(array $entity): ?RegistrationPayment

@@ -61,7 +61,7 @@ class RegistrationJoinTest extends TestCase
         $this->assertNotNull($response->json('qr.expiresAt'));
         $this->assertDatabaseHas('registration_payments', [
             'id' => $payment->id, 'provider' => 'razorpay', 'status' => 'created', 'total_amount' => 52_300,
-            'razorpay_qr_id' => "qr_{$payment->id}", 'organiser_net' => 50_066,
+            'razorpay_qr_id' => "qr_{$payment->id}", 'organiser_net' => 50_000,
         ]);
         $this->assertDatabaseCount('auction_players', 0);
         $this->assertDatabaseHas('auction_invitations', ['token' => $this->invite, 'joined_count' => 0]);

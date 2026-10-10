@@ -46,7 +46,9 @@ final class FeeCalculator
                 platformFee: $platform,
                 gatewayFee: $total - $base - $platform,
                 totalAmount: $total,
-                organiserNet: $total - $platform - $estimated,
+                // Player bears the fees → the organiser receives exactly the fee; the
+                // rupee round-up surplus stays with CrickPro.
+                organiserNet: $base,
                 estimatedGatewayFee: $estimated,
                 feeBearer: self::BEARER_PLAYER,
             );

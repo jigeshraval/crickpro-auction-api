@@ -37,17 +37,17 @@ class RefundTest extends TestCase
         $this->as($this->owner)->postJson("/v1/payments/{$this->payment->id}/refund")
             ->assertOk()
             ->assertJsonPath('refund.amount', 52_300)
-            ->assertJsonPath('refund.organiserDebit', 50_066)
+            ->assertJsonPath('refund.organiserDebit', 50_000)
             ->assertJsonPath('payment.status', 'refunded')
             ->assertJsonPath('payment.refundableAmount', 0);
 
         $p = $this->payment->fresh();
         $this->assertSame(52_300, $p->refunded_amount);
-        $this->assertSame(50_066, $p->organiser_refunded);
-        $this->assertSame(1000, $p->platform_fee_refunded);
+        $this->assertSame(50_000, $p->organiser_refunded);
+        $this->assertSame(1066, $p->platform_fee_refunded);
         $this->assertSame(1234, $p->gateway_fee_refunded);
         $this->assertSame('refunded', PlayerRegistration::first()->status);
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'refund', 'amount' => -50_066]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'refund', 'amount' => -50_000]);
         $this->assertDatabaseCount('auction_players', 1); // player stays in the pool
         Http::assertSent(fn (HttpRequest $r) => str_ends_with($r->url(), '/payments/pay_A/refund') && $r['amount'] === 52_300);
     }
@@ -56,15 +56,15 @@ class RefundTest extends TestCase
     {
         $this->as($this->owner)->postJson("/v1/payments/{$this->payment->id}/refund", ['amount' => 26_150])
             ->assertOk()
-            ->assertJsonPath('refund.organiserDebit', 25_033)
+            ->assertJsonPath('refund.organiserDebit', 25_000)
             ->assertJsonPath('payment.status', 'partially_refunded')
             ->assertJsonPath('payment.refundableAmount', 26_150);
         $this->as($this->owner)->postJson("/v1/payments/{$this->payment->id}/refund", ['amount' => 26_150])
             ->assertOk()
-            ->assertJsonPath('refund.organiserDebit', 25_033);
+            ->assertJsonPath('refund.organiserDebit', 25_000);
 
-        $this->assertSame(-50_066, (int) WalletLedger::where('type', 'refund')->sum('amount'));
-        $this->assertSame(1000, $this->payment->fresh()->platform_fee_refunded);
+        $this->assertSame(-50_000, (int) WalletLedger::where('type', 'refund')->sum('amount'));
+        $this->assertSame(1066, $this->payment->fresh()->platform_fee_refunded);
     }
 
     public function test_refund_rules(): void
@@ -104,8 +104,8 @@ class RefundTest extends TestCase
             'id' => 'rfnd_EXT', 'entity' => 'refund', 'payment_id' => 'pay_A', 'amount' => 10_000, 'status' => 'pending',
         ]]])->assertOk();
 
-        $this->assertDatabaseHas('payment_refunds', ['razorpay_refund_id' => 'rfnd_EXT', 'initiated_by' => 'external', 'organiser_debit' => 9573]);
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'refund', 'amount' => -9573]);
+        $this->assertDatabaseHas('payment_refunds', ['razorpay_refund_id' => 'rfnd_EXT', 'initiated_by' => 'external', 'organiser_debit' => 9560]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'refund', 'amount' => -9560]);
         $this->assertSame('partially_refunded', $this->payment->fresh()->status);
     }
 
@@ -138,7 +138,7 @@ class RefundTest extends TestCase
         $this->webhook('razorpay', 'refund.failed', ['refund' => ['entity' => ['id' => $refundId, 'payment_id' => 'pay_A', 'amount' => 52_300, 'status' => 'failed']]])->assertOk();
         $this->webhook('razorpay', 'refund.failed', ['refund' => ['entity' => ['id' => $refundId, 'payment_id' => 'pay_A', 'amount' => 52_300, 'status' => 'failed']]])->assertOk();
 
-        $this->assertDatabaseHas('wallet_ledger', ['type' => 'refund_reversal', 'amount' => 50_066]);
+        $this->assertDatabaseHas('wallet_ledger', ['type' => 'refund_reversal', 'amount' => 50_000]);
         $this->assertSame(1, WalletLedger::where('type', 'refund_reversal')->count());
         $p = $this->payment->fresh();
         $this->assertSame('paid', $p->status);

@@ -92,7 +92,8 @@ Route::prefix('v1/public/auctions')->middleware('throttle:30,1')->group(function
 });
 
 // Public "Invite Player" self-registration — token in the URL is the credential.
-Route::prefix('v1/public/invitations')->middleware('throttle:20,1')->group(function () {
+// Per IP; raised for venues where many players share one IP.
+Route::prefix('v1/public/invitations')->middleware('throttle:120,1')->group(function () {
     Route::get('{auction}/{token}', [InvitationController::class, 'show']);
     Route::post('{auction}/{token}/join', [InvitationController::class, 'join']);
 });
@@ -100,7 +101,7 @@ Route::prefix('v1/public/invitations')->middleware('throttle:20,1')->group(funct
 // Public registration status / payment — the registration token is the credential.
 // GET is polled every 3 s by the player page (venue NAT → generous limit).
 Route::prefix('v1/public/registrations/{registrationToken}')->group(function () {
-    Route::get('/', [PublicRegistrationController::class, 'show'])->middleware('throttle:120,1');
+    Route::get('/', [PublicRegistrationController::class, 'show'])->middleware('throttle:registration-status');
     Route::post('new-qr', [PublicRegistrationController::class, 'newQr'])->middleware('throttle:10,1');
     Route::post('proof', [PublicRegistrationController::class, 'proof'])->middleware('throttle:10,1');
 });
@@ -201,6 +202,8 @@ Route::prefix('v1/wallet')->middleware('auth:sanctum')->group(function () {
 
 // Organiser refunds a registration payment (fees included for the player).
 Route::post('v1/payments/{payment}/refund', [RefundController::class, 'store'])->middleware(['auth:sanctum', 'throttle:20,1']);
+// Fee preview before an auction exists (Create Auction form) — India-only, checked in the controller.
+Route::get('v1/payments/fee-preview', [RegistrationSettingsController::class, 'userFeePreview'])->middleware(['auth:sanctum', 'throttle:120,1']);
 
 Route::prefix('v1/integrations/crickpro')->middleware('auth:sanctum')->group(function () {
     Route::get('status', [CrickproController::class, 'status']);

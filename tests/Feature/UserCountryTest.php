@@ -108,24 +108,31 @@ class UserCountryTest extends TestCase
         $this->withoutHeader('Authorization')->patchJson('/v1/auth/user', ['countryCode' => 'IN'])->assertUnauthorized();
     }
 
-    public function test_suggested_country_comes_from_cloudflare_only_while_unset(): void
+    public function test_country_is_filled_from_cloudflare_only_while_unset(): void
     {
         User::factory()->create(['email' => 'org@example.com', 'password' => bcrypt('Passw0rd1')]);
         $token = $this->login()->json('token');
         $auth = fn () => $this->withHeader('Authorization', "Bearer {$token}");
 
+        // Cloudflare's unknown / Tor codes and a missing header set nothing.
+        $auth()->withHeader('CF-IPCountry', 'XX')->getJson('/v1/auth/user')->assertJsonPath('user.country', null);
+        $auth()->withHeader('CF-IPCountry', 'T1')->getJson('/v1/auth/user')->assertJsonPath('user.country', null);
+        $auth()->withoutHeader('CF-IPCountry')->getJson('/v1/auth/user')->assertJsonPath('user.country', null);
+
+        // App start (GET /auth/user) fills it from Cloudflare.
         $auth()->withHeader('CF-IPCountry', 'in')->getJson('/v1/auth/user')
-            ->assertOk()->assertJsonPath('user.country', null)->assertJsonPath('user.suggestedCountry', 'IN');
+            ->assertOk()->assertJsonPath('user.country', 'IN')->assertJsonPath('user.features.registrationPayments', true);
 
-        // Cloudflare's unknown / Tor codes and a missing header suggest nothing.
-        $auth()->withHeader('CF-IPCountry', 'XX')->getJson('/v1/auth/user')->assertJsonPath('user.suggestedCountry', null);
-        $auth()->withHeader('CF-IPCountry', 'T1')->getJson('/v1/auth/user')->assertJsonPath('user.suggestedCountry', null);
-        $auth()->withoutHeader('CF-IPCountry')->getJson('/v1/auth/user')->assertJsonPath('user.suggestedCountry', null);
+        // Once set, a different Cloudflare country never overwrites it.
+        $auth()->withHeader('CF-IPCountry', 'AE')->getJson('/v1/auth/user')->assertJsonPath('user.country', 'IN');
+    }
 
-        // Once the user has a country, no suggestion.
-        $auth()->patchJson('/v1/auth/user', ['countryCode' => 'AE', 'countryName' => 'United Arab Emirates'])->assertOk();
-        $auth()->withHeader('CF-IPCountry', 'IN')->getJson('/v1/auth/user')
-            ->assertJsonPath('user.country', 'AE')->assertJsonPath('user.suggestedCountry', null);
+    public function test_login_without_a_country_code_fills_it_from_cloudflare(): void
+    {
+        User::factory()->create(['email' => 'org@example.com', 'password' => bcrypt('Passw0rd1')]);
+
+        $this->withHeader('CF-IPCountry', 'IN')->postJson('/v1/auth/login-password', ['email' => 'org@example.com', 'password' => 'Passw0rd1'])
+            ->assertOk()->assertJsonPath('user.country', 'IN');
     }
 
     public function test_backfill_marks_plus_91_mobiles_as_india(): void

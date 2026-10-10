@@ -384,6 +384,9 @@ class AuthController extends Controller
 
     public function user(Request $request): JsonResponse
     {
+        // Existing sessions without a country pick it up from Cloudflare on app start.
+        $this->country->fillFromCloudflare($request->user());
+
         return response()->json([
             'status' => 'success',
             'user' => new UserResource($request->user()),
