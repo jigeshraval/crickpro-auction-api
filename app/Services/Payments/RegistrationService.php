@@ -52,6 +52,8 @@ class RegistrationService
             'bowlingStyle' => isset($data['bowlingStyle']) ? (trim($data['bowlingStyle']) ?: null) : null,
             'city' => $data['city'] ?? null,
             'phone' => $data['phone'] ?? null,
+            // Relative ImageStorage path of the self-uploaded photo (player-photos).
+            'photoUrl' => $data['photoUrl'] ?? null,
         ];
     }
 
@@ -67,6 +69,7 @@ class RegistrationService
             'bowling_style' => $payload['bowlingStyle'],
             'city' => $payload['city'],
             'phone' => $payload['phone'],
+            'photo_url' => $payload['photoUrl'],
         ], fn ($v) => $v !== null);
     }
 
@@ -301,6 +304,16 @@ class RegistrationService
 
             return $auctionPlayer;
         });
+    }
+
+    /**
+     * The invitee's own photo — stored exactly like the organiser's player-photo
+     * upload (same kind + 512 max edge, WebP with alpha kept). Returns the
+     * relative path that goes into the payload as `photoUrl`.
+     */
+    public function storePlayerPhoto(UploadedFile $file): string
+    {
+        return $this->images->store($file, 'player-photos', 512);
     }
 
     /** Manual mode: attach (or replace) the payment screenshot + optional UTR. */

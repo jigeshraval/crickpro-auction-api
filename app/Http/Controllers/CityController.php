@@ -37,7 +37,7 @@ class CityController extends Controller
                 $boolean = $this->booleanSearchTerm($search);
                 if ($boolean !== '') {
                     $query
-                        ->selectRaw('cities.*, MATCH(name) AGAINST(? IN BOOLEAN MODE) AS relevance', [$boolean])
+                        ->selectRaw('city.*, MATCH(name) AGAINST(? IN BOOLEAN MODE) AS relevance', [$boolean])
                         ->whereRaw('MATCH(name) AGAINST(? IN BOOLEAN MODE)', [$boolean])
                         ->orderBy('relevance', 'desc');
                 } else {

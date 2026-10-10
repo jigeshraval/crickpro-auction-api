@@ -128,7 +128,16 @@ class InvitationController extends Controller
             'bowlingStyle' => 'nullable|string|max:40',
             'city' => 'nullable|string|max:80',
             'phone' => 'nullable|string|max:20',
+            // Optional self-uploaded photo (multipart). Same limits as the organiser's player-photo upload.
+            'photo' => 'nullable|file|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
+
+        unset($data['photo']);
+        if ($request->hasFile('photo')) {
+            // Free mode → lands on the player now; paid modes → kept in the
+            // registration payload and applied when addToPool() creates the player.
+            $data['photoUrl'] = $this->registrations->storePlayerPhoto($request->file('photo'));
+        }
 
         $settings = $this->settings->forAuction($auction);
 

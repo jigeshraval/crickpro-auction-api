@@ -31,7 +31,9 @@ return new class extends Migration
             ->where('mobile', 'like', '+91%')
             ->update(['country' => 'IN']);
 
-        $indiaId = DB::table('countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
+        // Runs before 2026_10_10_000009 renames `countries` → `country` (api-v2 naming).
+        $countryTable = Schema::hasTable('country') ? 'country' : 'countries';
+        $indiaId = DB::table($countryTable)->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         if ($indiaId) {
             DB::table('users')
                 ->where('country', 'IN')

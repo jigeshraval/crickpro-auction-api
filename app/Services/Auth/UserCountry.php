@@ -7,8 +7,8 @@ use App\Models\User;
 
 /**
  * Applies the app-sent country to a user. Only acts when countryCode is
- * provided (never clears it). id_country is resolved by case-insensitive
- * exact name match on `countries.name`; an unknown name resolves to null and
+ * provided (never clears it). id_country is resolved by ISO2 (`country.iso2`), then by case-insensitive
+ * exact name match on `country.name`; an unknown name resolves to null and
  * never fails the request. If no name is sent and the code didn't change,
  * the existing id_country is kept.
  *
@@ -27,9 +27,10 @@ class UserCountry
         }
 
         $countryName = $countryName !== null ? trim($countryName) : '';
-        $countryId = $countryName !== ''
-            ? Country::whereRaw('LOWER(name) = ?', [mb_strtolower($countryName)])->value('id')
-            : ($user->country === $countryCode ? $user->id_country : null);
+        // ISO2 first (seeded from api-v2's `country`), then the app-sent name.
+        $countryId = $this->idForCode($countryCode)
+            ?? ($countryName !== '' ? Country::whereRaw('LOWER(name) = ?', [mb_strtolower($countryName)])->value('id') : null)
+            ?? ($user->country === $countryCode ? $user->id_country : null);
 
         $user->forceFill(['country' => $countryCode, 'id_country' => $countryId])->save();
     }
@@ -39,7 +40,14 @@ class UserCountry
     {
         $code = cfCountry();
         if ($user->country === null && $code !== null) {
-            $user->forceFill(['country' => $code])->save();
+            $user->forceFill(['country' => $code, 'id_country' => $this->idForCode($code)])->save();
         }
+    }
+
+    private function idForCode(string $code): ?int
+    {
+        $id = Country::where('iso2', $code)->value('id');
+
+        return $id !== null ? (int) $id : null;
     }
 }

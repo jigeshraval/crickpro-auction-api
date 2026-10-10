@@ -20,5 +20,6 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(OverlayTemplateSeeder::class);
         $this->call(CurrencySeeder::class);
+        $this->call(GeoSeeder::class);
     }
 }

@@ -29,6 +29,10 @@ class ImageStorage
         $path = 'auction/'.$kind.'/'.Str::random(40).($png ? '.png' : '.webp');
 
         if ($src === false || (! $png && ! function_exists('imagewebp'))) {
+            // Original bytes, untouched (so alpha is never flattened), under the
+            // original extension so the CDN serves the right content type.
+            $ext = strtolower($file->guessExtension() ?: $file->getClientOriginalExtension() ?: 'bin');
+            $path = 'auction/'.$kind.'/'.Str::random(40).'.'.$ext;
             Storage::disk(self::DISK)->put($path, file_get_contents($file->getRealPath()), 'public');
 
             return $path;

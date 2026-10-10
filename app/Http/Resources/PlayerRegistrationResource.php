@@ -24,10 +24,13 @@ class PlayerRegistrationResource extends JsonResource
                 'bowlingStyle' => $payload['bowlingStyle'] ?? null,
                 'city' => $payload['city'] ?? null,
                 'phone' => $payload['phone'] ?? null,
+                'photoUrl' => $payload['photoUrl'] ?? null,
             ],
             'amount' => $payment?->total_amount,
             'paymentId' => $payment?->id,
             'paymentStatus' => $payment?->status,
+            // Razorpay registrations prove payment with the gateway transaction id, not a screenshot.
+            'razorpayPaymentId' => $payment?->razorpay_payment_id,
             'utr' => $payment?->utr,
             'proofUrl' => $payment?->proof_url,
             'rejectReason' => $this->reject_reason,

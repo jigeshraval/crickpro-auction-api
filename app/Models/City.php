@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 /** A local copy of crickpro-api's `city` table, trimmed to id+name+state+country — see the geo_location_tables migration for why. */
 class City extends Model
 {
+    protected $table = 'city';
+
     public $timestamps = false;
 
     protected $fillable = ['id', 'name', 'id_state', 'id_country'];

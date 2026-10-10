@@ -135,6 +135,16 @@ class UserCountryTest extends TestCase
             ->assertOk()->assertJsonPath('user.country', 'IN');
     }
 
+    public function test_country_id_resolves_by_iso2_including_cloudflare_fill(): void
+    {
+        Country::create(['id' => 2, 'name' => 'Bharat', 'iso2' => 'IN']);
+        User::factory()->create(['email' => 'org@example.com', 'password' => bcrypt('Passw0rd1')]);
+        $token = $this->login()->json('token');
+
+        $this->withHeader('Authorization', "Bearer {$token}")->withHeader('CF-IPCountry', 'IN')->getJson('/v1/auth/user')
+            ->assertJsonPath('user.country', 'IN')->assertJsonPath('user.countryId', 2);
+    }
+
     public function test_backfill_marks_plus_91_mobiles_as_india(): void
     {
         $indian = User::factory()->create(['mobile' => '+919876543210']);
