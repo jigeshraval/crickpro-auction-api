@@ -21,6 +21,7 @@ class QuickStartAuctionRequest extends FormRequest
             'purse' => 'nullable|integer|min:0',
             'squadMax' => 'nullable|integer|min:1|max:50',
             'venue' => 'nullable|string|max:200',
+            'cityId' => 'nullable|integer|exists:city,id',
             'scheduledAt' => 'nullable|date',
             'minBasePrice' => 'nullable|integer|min:0',
             'bidIncrementMode' => 'nullable|string|in:flat,slab',

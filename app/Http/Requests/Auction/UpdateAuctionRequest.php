@@ -25,6 +25,7 @@ class UpdateAuctionRequest extends FormRequest
             'isListed' => 'sometimes|boolean',
             'imageRounded' => 'sometimes|boolean',
             'venue' => 'sometimes|nullable|string|max:200',
+            'cityId' => 'sometimes|nullable|integer|exists:city,id',
             'scheduledAt' => 'sometimes|nullable|date',
             'seasonLabel' => 'sometimes|nullable|string|max:60',
         ];

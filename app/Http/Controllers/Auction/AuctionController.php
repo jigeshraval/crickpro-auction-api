@@ -10,14 +10,17 @@ use App\Http\Resources\AuctionResource;
 use App\Http\Resources\PublicAuctionResource;
 use App\Models\Auction;
 use App\Repositories\AuctionRepository;
+use App\Services\Crickpro\RosterExporter;
+use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class AuctionController extends Controller
 {
     public function __construct(
         private readonly AuctionRepository $auctions,
-        private readonly \App\Services\SubscriptionService $subs,
+        private readonly SubscriptionService $subs,
     ) {}
 
     /** Shared team-count gate — a 402 when the plan doesn't cover the teams. */
@@ -103,7 +106,8 @@ class AuctionController extends Controller
         if ($request->has('currencyId')) {
             $attributes['id_currency'] = (int) $request->input('currencyId');
         }
-        $columnsByField = ['name' => 'name', 'venue' => 'venue', 'scheduledAt' => 'scheduled_at', 'seasonLabel' => 'season_label'];
+        // City → state/country + `location` are derived in AuctionLocation (model hook); null clears all.
+        $columnsByField = ['name' => 'name', 'venue' => 'venue', 'cityId' => 'id_city', 'scheduledAt' => 'scheduled_at', 'seasonLabel' => 'season_label'];
         foreach ($columnsByField as $field => $column) {
             if ($request->has($field)) {
                 $attributes[$column] = $request->input($field);
@@ -152,7 +156,7 @@ class AuctionController extends Controller
      * tournament — imported players link by CrickPro id, manually-added players
      * get a placeholder CrickPro account created. Idempotent (re-runnable).
      */
-    public function pushToCrickpro(ShowAuctionRequest $request, Auction $auction, \App\Services\Crickpro\RosterExporter $exporter): JsonResponse
+    public function pushToCrickpro(ShowAuctionRequest $request, Auction $auction, RosterExporter $exporter): JsonResponse
     {
         // No completed-status requirement — the organiser can push the current
         // squads any time (mid-auction or after). It's idempotent + re-runnable.
@@ -199,7 +203,7 @@ class AuctionController extends Controller
 
         // 8-char uppercase key, same as crickpro-app's match secret.
         if (! $auction->overlay_secret || strlen($auction->overlay_secret) !== 8) {
-            $auction->update(['overlay_secret' => strtoupper(\Illuminate\Support\Str::random(8))]);
+            $auction->update(['overlay_secret' => strtoupper(Str::random(8))]);
         }
 
         return response()->json([

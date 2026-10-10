@@ -48,6 +48,8 @@ class AuctionRepository
                 'slug' => $slug,
                 'season_label' => $input['seasonLabel'] ?? null,
                 'venue' => $input['venue'] ?? null,
+                // state/country + `location` derive from the city (AuctionLocation).
+                'id_city' => $input['cityId'] ?? null,
                 'access_code' => $this->generateAccessCode(),
                 'scheduled_at' => $input['scheduledAt'] ?? null,
                 // READY, not DRAFT — if the pieces are here, it's ready. Making

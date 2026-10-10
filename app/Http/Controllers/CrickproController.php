@@ -7,6 +7,7 @@ use App\Models\CrickproLink;
 use App\Repositories\AuctionPlayerRepository;
 use App\Repositories\PlayerRepository;
 use App\Repositories\TeamRepository;
+use App\Services\AuctionLocation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -178,7 +179,25 @@ class CrickproController extends Controller
         return response()->json([
             'status' => 'success',
             'teams' => $res->json('teams', []),
+            // The tournament's city/state/country (api-v2 ids) + its label from
+            // this app's geo copy, so Create Auction can pre-fill the City.
+            'tournament' => $this->tournamentLocation($res->json('tournament')),
         ]);
+    }
+
+    /** api-v2's tournament {cityId,stateId,countryId} → resolved {cityId,stateId,countryId,location}, or null. */
+    private function tournamentLocation(mixed $tournament): ?array
+    {
+        if (! is_array($tournament)) {
+            return null;
+        }
+        $resolved = AuctionLocation::describe(
+            (int) ($tournament['cityId'] ?? 0) ?: null,
+            (int) ($tournament['stateId'] ?? 0) ?: null,
+            (int) ($tournament['countryId'] ?? 0) ?: null,
+        );
+
+        return ['id' => $tournament['id'] ?? null, 'name' => $tournament['name'] ?? null, ...$resolved];
     }
 
     /** Relay one team's players from crickpro-api-v2. */
@@ -345,6 +364,7 @@ class CrickproController extends Controller
                 'id_crickpro_series' => (int) $request->input('tournamentId'),
                 'crickpro_series_name' => $request->input('tournamentName') ?: $auction->crickpro_series_name,
             ]);
+            $this->copyTournamentLocation($request, $auction, (int) $request->input('tournamentId'));
         }
 
         $existing = $auction->teams()->pluck('name')->map(fn ($n) => mb_strtolower($n))->all();
@@ -369,6 +389,32 @@ class CrickproController extends Controller
         }
 
         return response()->json(['status' => 'success', 'imported' => $imported]);
+    }
+
+    /**
+     * Server-side fallback for Create Auction's "from a CrickPro tournament"
+     * flow: an auction with no location yet takes the tournament's
+     * city/state/country, read from api-v2 (the source of truth) through the
+     * same teams endpoint. Best-effort — never fails the import.
+     */
+    private function copyTournamentLocation(Request $request, Auction $auction, int $tournamentId): void
+    {
+        $link = $this->linkFor($request);
+        if ($auction->id_city || $auction->id_state || $auction->id_country || ! $link || ! $this->base()) {
+            return;
+        }
+
+        try {
+            $res = Http::withToken($link->token)->acceptJson()->timeout(8)
+                ->get($this->base().'/api/v2/auction-import/tournament/'.$tournamentId.'/teams');
+            $t = $res->successful() ? (array) $res->json('tournament', []) : [];
+            $attributes = AuctionLocation::attributesFrom($t['cityId'] ?? null, $t['stateId'] ?? null, $t['countryId'] ?? null);
+            if ($attributes) {
+                $auction->update($attributes);
+            }
+        } catch (\Throwable) {
+            // Best-effort — the organiser can set the city from Edit Auction.
+        }
     }
 
     /** A tidy <=4-char short code — the given one, else initials/first letters of the name. */

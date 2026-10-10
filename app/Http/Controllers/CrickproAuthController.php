@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Repositories\AuctionRepository;
 use App\Repositories\AuthRepository;
 use App\Repositories\TeamRepository;
+use App\Services\AuctionLocation;
 use App\Services\Auth\AuthTokenService;
 use App\Services\Auth\UserCountry;
 use Illuminate\Http\JsonResponse;
@@ -177,6 +178,8 @@ class CrickproAuthController extends Controller
             'token' => 'required|string',
             'tournamentId' => 'nullable|integer',
             'tournamentName' => 'nullable|string|max:120',
+            // The tournament's (series.id_city) city — copied onto the auction.
+            'cityId' => 'nullable|integer',
         ]);
 
         if (! $this->base()) {
@@ -198,7 +201,7 @@ class CrickproAuthController extends Controller
         );
 
         $result = $this->auctions->quickStart($user->id, [
-            'name' => $data['tournamentName'] ?: 'Player Auction',
+            'name' => ($data['tournamentName'] ?? null) ?: 'Player Auction',
         ]);
         $auction = $result['auction'];
 
@@ -207,22 +210,32 @@ class CrickproAuthController extends Controller
         if (! empty($data['tournamentId'])) {
             $auction->update([
                 'id_crickpro_series' => (int) $data['tournamentId'],
-                'crickpro_series_name' => $data['tournamentName'] ?: null,
+                'crickpro_series_name' => ($data['tournamentName'] ?? null) ?: null,
             ]);
         }
 
         // Seed teams — fetched with the SAME token, so only teams the crickpro
-        // user is allowed to see can be imported.
+        // user is allowed to see can be imported. The same response carries the
+        // tournament's city/state/country (api-v2 is the source of truth).
         $imported = 0;
+        $tournament = [];
         if (! empty($data['tournamentId'])) {
             $tRes = $this->v2($data['token'])
                 ->get($this->base().'/api/v2/auction-import/tournament/'.((int) $data['tournamentId']).'/teams');
             if ($tRes->successful()) {
+                $tournament = (array) $tRes->json('tournament', []);
                 $teams = collect($tRes->json('teams', []))
                     ->map(fn ($t) => ['name' => $t['name'] ?? '', 'short' => $t['short'] ?? null, 'logo' => $t['logo'] ?? null])
                     ->all();
                 $imported = $this->importTeams($auction, $teams);
             }
+        }
+
+        // Location: the city sent by the caller wins, else the tournament's own.
+        $location = AuctionLocation::attributesFrom($data['cityId'] ?? null)
+            ?: AuctionLocation::attributesFrom($tournament['cityId'] ?? null, $tournament['stateId'] ?? null, $tournament['countryId'] ?? null);
+        if ($location) {
+            $auction->update($location);
         }
 
         return response()->json([

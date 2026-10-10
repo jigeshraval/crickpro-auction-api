@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\AuctionLocation;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'id_owner', 'id_currency', 'id_crickpro_series', 'crickpro_series_name',
     'name', 'slug', 'season_label', 'description', 'logo_url', 'cover_url',
-    'venue', 'access_code', 'overlay_secret', 'overlay_theme', 'max_teams', 'overlay_access', 'is_listed', 'status', 'image_rounded',
+    'venue', 'id_city', 'id_state', 'id_country', 'location', 'access_code', 'overlay_secret', 'overlay_theme', 'max_teams', 'overlay_access', 'is_listed', 'status', 'image_rounded',
     'current_round', 'id_current_auction_player', 'event_sequence',
     'scheduled_at', 'started_at', 'paused_at', 'completed_at',
 ])]
@@ -31,6 +32,12 @@ class Auction extends Model
     public const STATUS_COMPLETED = 'completed';
 
     public const STATUS_ABANDONED = 'abandoned';
+
+    protected static function booted(): void
+    {
+        // city → state/country + the "City, State, Country" label, kept in one place.
+        static::saving(fn (Auction $auction) => AuctionLocation::apply($auction));
+    }
 
     protected function casts(): array
     {
