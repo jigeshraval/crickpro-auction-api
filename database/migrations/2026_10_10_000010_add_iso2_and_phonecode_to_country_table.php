@@ -14,8 +14,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('country', function (Blueprint $table) {
-            $table->char('iso2', 2)->nullable()->after('name')->index();
-            $table->string('phonecode', 16)->nullable()->after('iso2');
+            if (! Schema::hasColumn('country', 'iso2')) {
+                $table->char('iso2', 2)->nullable()->after('name')->index();
+            }
+            if (! Schema::hasColumn('country', 'phonecode')) {
+                $table->string('phonecode', 16)->nullable()->after('iso2');
+            }
         });
     }
 
