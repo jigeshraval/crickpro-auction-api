@@ -11,12 +11,14 @@ use App\Http\Resources\TeamResource;
 use App\Models\Auction;
 use App\Models\Team;
 use App\Repositories\TeamRepository;
+use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
 
 class TeamController extends Controller
 {
     public function __construct(
         private readonly TeamRepository $teams,
+        private readonly SubscriptionService $subs,
     ) {}
 
     public function index(ShowAuctionRequest $request, Auction $auction): JsonResponse
@@ -31,7 +33,9 @@ class TeamController extends Controller
     {
         // Enforce the plan's team allowance (free baseline, raised by an active
         // pack). The app gates this too, but the server is the real guard.
-        $allowance = max((int) config('subscription.free_teams', 3), (int) ($auction->max_teams ?? 0));
+        // Allowance comes from the live subscription, not the denorm column —
+        // see SubscriptionService::allowanceFor.
+        $allowance = $this->subs->allowanceFor($auction);
         if ($auction->teams()->count() >= $allowance) {
             return response()->json([
                 'status' => 'error',

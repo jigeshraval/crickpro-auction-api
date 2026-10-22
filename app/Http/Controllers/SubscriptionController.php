@@ -24,7 +24,7 @@ class SubscriptionController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $this->subs->teamPacks(),
-            'freeTeams' => (int) config('subscription.free_teams', 3),
+            'freeTeams' => (int) config('subscription.free_teams', 2),
         ]);
     }
 
@@ -38,7 +38,7 @@ class SubscriptionController extends Controller
         $maxTeams = 0;
         $isSubscribed = false;
         $teamCount = 0;
-        $allowance = (int) config('subscription.free_teams', 3);
+        $allowance = (int) config('subscription.free_teams', 2);
         $allowed = true;
 
         if ($auctionId) {
@@ -61,7 +61,7 @@ class SubscriptionController extends Controller
             'data' => [
                 'isSubscribed' => $isSubscribed,
                 'maxTeams' => (int) $maxTeams,
-                'freeTeams' => (int) config('subscription.free_teams', 3),
+                'freeTeams' => (int) config('subscription.free_teams', 2),
                 'teamCount' => (int) $teamCount,
                 'allowance' => (int) $allowance,
                 'allowed' => (bool) $allowed,

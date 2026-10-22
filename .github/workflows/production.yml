@@ -47,6 +47,7 @@ jobs:
             runs-on: ubuntu-latest
             needs: create-deployment-artifacts
             strategy:
+                  fail-fast: false
                   matrix:
                         server: ${{ fromJson(needs.create-deployment-artifacts.outputs.deployment-matrix) }}
             steps:
@@ -88,7 +89,10 @@ jobs:
             name: "${{ matrix.server.name }}: Activate release"
             runs-on: ubuntu-latest
             needs: [create-deployment-artifacts, prepare-release-on-servers]
+            # Run on every box once the build succeeded — a dead/failed box must not block the others.
+            if: ${{ !cancelled() && needs.create-deployment-artifacts.result == 'success' }}
             strategy:
+                  fail-fast: false
                   matrix:
                         server: ${{ fromJson(needs.create-deployment-artifacts.outputs.deployment-matrix) }}
             steps:
@@ -107,17 +111,30 @@ jobs:
                           command_timeout: 30m
                           envs: GITHUB_SHA,LARAVEL_PROD_ENV,BASE_PATH
                           script: |
+                                # Box role from /etc/crickpro/role (primary|replica), maintained by promote.sh /
+                                # failback.sh. primary: migrate/seed + app runs. replica: code deployed, app kept
+                                # in pm2 but STOPPED (promote.sh starts it). See docs/mysql-ha-replication.md.
+                                ROLE=$(cat /etc/crickpro/role 2>/dev/null || true)
+                                case "$ROLE" in
+                                  primary|replica) echo "Box role: $ROLE" ;;
+                                  *) echo "ERROR: /etc/crickpro/role missing/invalid ('$ROLE') on $(hostname). Fix: sudo mkdir -p /etc/crickpro && sudo chmod 755 /etc/crickpro && echo replica | sudo tee /etc/crickpro/role"; exit 1 ;;
+                                esac
+
                                 cd ${BASE_PATH}
                                 /usr/bin/php8.4 $(which composer) install --no-dev --no-interaction --prefer-dist
 
                                 printf "%s" "$LARAVEL_PROD_ENV" > "${BASE_PATH}/.env"
 
-                                /usr/bin/php8.4 artisan migrate --force
+                                if [ "$ROLE" = "primary" ]; then
+                                  /usr/bin/php8.4 artisan migrate --force
 
-                                # Reference-data seeders (currencies + overlay templates) are
-                                # idempotent (updateOrCreate / firstOrCreate) — safe every deploy.
-                                # /usr/bin/php8.4 artisan db:seed --force
-                                /usr/bin/php8.4 artisan db:seed --class=GeoSeeder --force
+                                  # Reference-data seeders (currencies + overlay templates) are
+                                  # idempotent (updateOrCreate / firstOrCreate) — safe every deploy.
+                                  # /usr/bin/php8.4 artisan db:seed --force
+                                  /usr/bin/php8.4 artisan db:seed --class=GeoSeeder --force
+                                else
+                                  echo "replica: skipping DB writes (migrate/seed) — applied via replication"
+                                fi
 
                                 /usr/bin/php8.4 artisan cache:clear
                                 /usr/bin/php8.4 artisan optimize
@@ -126,3 +143,6 @@ jobs:
                                 # session + file cache mean no Redis/Swoole to wire up).
                                 pm2 delete crickpro-auction-api || true
                                 pm2 start artisan --name crickpro-auction-api --interpreter /usr/bin/php8.4 -- serve --host=0.0.0.0 --port=16080
+                                # Replica: keep the pm2 definition (args + env) but don't run it.
+                                if [ "$ROLE" != "primary" ]; then pm2 stop crickpro-auction-api; fi
+                                pm2 save

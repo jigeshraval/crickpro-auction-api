@@ -45,5 +45,5 @@ return [
     ],
 
     /* Teams allowed on an auction with no active plan. */
-    'free_teams' => 3,
+    'free_teams' => (int) env('SUBSCRIPTION_FREE_TEAMS', 2),
 ];

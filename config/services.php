@@ -49,9 +49,16 @@ return [
         'provision_secret' => env('CRICKPRO_PROVISION_SECRET'),
     ],
 
+    // Cloudflare Turnstile (same widget as crickpro-web-v3) — protects the public
+    // player registration form. Hostnames = comma-separated frontend hosts.
+    'turnstile' => [
+        'secret' => env('TURNSTILE_SECRET', ''),
+        'hostnames' => env('TURNSTILE_HOSTNAMES', ''),
+    ],
+
     // Public web frontend (crickpro-auction) — base for shareable invite links.
     'auction_web' => [
-        'url' => env('AUCTION_WEB_URL', 'https://auctions.crick.pro'),
+        'url' => env('AUCTION_WEB_URL', 'https://auction.crickpro.com'),
     ],
 
     // Meta WhatsApp Cloud API — same integration as crickpro-api's

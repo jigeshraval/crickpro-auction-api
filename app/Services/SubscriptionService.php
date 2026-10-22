@@ -141,10 +141,20 @@ class SubscriptionService
             ->first();
     }
 
-    /** Team allowance for an auction: free baseline, raised by an active pack. */
+    /**
+     * Team allowance for an auction: free baseline, raised by an active pack.
+     *
+     * Reads the live subscription directly, NOT the denormalised `auctions.max_teams`
+     * column. The denorm column can lag the ledger (a purchase whose syncAuction ran
+     * before the row went live, a webhook-activated row, a direct grant) — gating off
+     * it paywalls a user who genuinely owns a bigger pack. The ledger is the only
+     * source of truth a gate may trust; the column stays for cheap display/overlay reads.
+     */
     public function allowanceFor(Auction $auction): int
     {
-        return max((int) config('subscription.free_teams', 3), (int) ($auction->max_teams ?? 0));
+        $active = $this->activeForAuction($auction->id);
+
+        return max((int) config('subscription.free_teams', 2), (int) ($active?->max_teams ?? 0));
     }
 
     /** Does the auction's plan actually cover its current team count? */

@@ -88,6 +88,18 @@ class TeamTest extends TestCase
         $this->assertDatabaseHas('teams', ['id' => $team['id']]);
     }
 
+    public function test_two_teams_are_free_and_the_third_needs_a_team_pack(): void
+    {
+        $url = "/v1/auctions/{$this->auction['id']}/teams";
+        $this->asOrganiser()->postJson($url, ['name' => 'Team One', 'shortName' => 'ONE'])->assertCreated();
+        $this->asOrganiser()->postJson($url, ['name' => 'Team Two', 'shortName' => 'TWO'])->assertCreated();
+
+        $this->asOrganiser()->postJson($url, ['name' => 'Team Three', 'shortName' => 'THR'])
+            ->assertStatus(402)
+            ->assertJsonPath('code', 'team_limit')
+            ->assertJsonPath('allowance', 2);
+    }
+
     public function test_non_owner_cannot_manage_teams(): void
     {
         User::factory()->create(['email' => 'intruder@example.com', 'password' => bcrypt('Passw0rd1')]);

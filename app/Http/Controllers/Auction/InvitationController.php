@@ -12,6 +12,7 @@ use App\Repositories\AuctionPlayerRepository;
 use App\Repositories\AuctionSettingRepository;
 use App\Services\Payments\FeeCalculator;
 use App\Services\Payments\RegistrationService;
+use App\Services\Security\TurnstileVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -31,6 +32,9 @@ use Illuminate\Support\Str;
  */
 class InvitationController extends Controller
 {
+    /** Turnstile action the invite page's widget uses (data-action). */
+    private const TURNSTILE_ACTION = 'player_registration';
+
     public function __construct(
         private readonly AuctionPlayerRepository $auctionPlayers,
         private readonly AuctionSettingRepository $settings,
@@ -119,6 +123,15 @@ class InvitationController extends Controller
         }
         if ($invitation->isExpired()) {
             return response()->json(['status' => 'error', 'message' => 'This invitation link has expired.'], 410);
+        }
+
+        // Cloudflare Turnstile — bots can't self-register (token sent as cf-turnstile-response).
+        if (! app(TurnstileVerifier::class)->verify($request, self::TURNSTILE_ACTION)) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'captcha_failed',
+                'message' => 'Please complete the security check and try again.',
+            ], 403);
         }
 
         $data = $request->validate([
