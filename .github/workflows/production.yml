@@ -132,6 +132,8 @@ jobs:
                                   # idempotent (updateOrCreate / firstOrCreate) — safe every deploy.
                                   # /usr/bin/php8.4 artisan db:seed --force
                                   /usr/bin/php8.4 artisan db:seed --class=GeoSeeder --force
+                                  # TEMP: seed SAR + Points currencies — remove after this deploy.
+                                  /usr/bin/php8.4 artisan db:seed --class=CurrencySeeder --force
                                 else
                                   echo "replica: skipping DB writes (migrate/seed) — applied via replication"
                                 fi

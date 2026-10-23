@@ -26,6 +26,10 @@ class CurrencySeeder extends Seeder
             ['id' => 8, 'code' => 'ZAR', 'name' => 'South African Rand', 'symbol' => 'R'],
             ['id' => 9, 'code' => 'AED', 'name' => 'UAE Dirham', 'symbol' => 'د.إ'],
             ['id' => 10, 'code' => 'SGD', 'name' => 'Singapore Dollar', 'symbol' => 'S$'],
+            ['id' => 11, 'code' => 'SAR', 'name' => 'Saudi Riyal', 'symbol' => 'ر.س'],
+            // Not a currency — purse/bids counted in points. 'P' prefix reads as
+            // "P500" / "Base P50" everywhere money() renders a symbol.
+            ['id' => 12, 'code' => 'PTS', 'name' => 'Points', 'symbol' => 'P'],
         ];
 
         foreach ($currencies as $currency) {
