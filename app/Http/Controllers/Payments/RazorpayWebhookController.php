@@ -40,11 +40,37 @@ class RazorpayWebhookController extends Controller
     {
         $raw = $request->getContent();
         $signature = (string) $request->header('X-Razorpay-Signature', '');
+        $expected = $secret ? hash_hmac('sha256', $raw, $secret) : '';
+        $matches = $secret !== '' && $signature !== '' && hash_equals($expected, $signature);
+        $skip = (bool) config('payments.razorpay.webhook_skip_signature', false);
 
-        if (! $secret || $signature === '' || ! hash_equals(hash_hmac('sha256', $raw, $secret), $signature)) {
-            Log::warning('Razorpay webhook signature rejected', ['source' => $source, 'ip' => $request->ip()]);
+        $peek = json_decode($raw, true);
+        $peekEvent = is_array($peek) ? ($peek['event'] ?? null) : null;
 
-            return response()->json(['status' => 'error', 'message' => 'Invalid signature.'], 401);
+        // Always log inbound delivery + signature outcome — confirms Razorpay
+        // reached us and whether the secret matches (received sig is an HMAC, not
+        // a secret; the server secret is never logged).
+        Log::info('Razorpay webhook received', [
+            'source' => $source,
+            'event' => $peekEvent,
+            'ip' => $request->ip(),
+            'hasSecret' => $secret !== '',
+            'signaturePresent' => $signature !== '',
+            'receivedSignature' => $signature,
+            'signatureMatches' => $matches,
+            'skipSignature' => $skip,
+        ]);
+
+        if (! $matches) {
+            if ($skip) {
+                Log::warning('Razorpay webhook signature check BYPASSED (payments.razorpay.webhook_skip_signature) — INSECURE, for diagnosis only, revert in production', [
+                    'source' => $source, 'event' => $peekEvent, 'ip' => $request->ip(),
+                ]);
+            } else {
+                Log::warning('Razorpay webhook signature rejected', ['source' => $source, 'ip' => $request->ip()]);
+
+                return response()->json(['status' => 'error', 'message' => 'Invalid signature.'], 401);
+            }
         }
 
         $body = json_decode($raw, true);
