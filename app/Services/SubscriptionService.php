@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Payments\RazorpayClient;
 use App\Services\Payments\SubscriptionPaymentsResolver;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -187,6 +188,52 @@ class SubscriptionService
         $this->syncAuction($sub->id_auction);
 
         return 'completed';
+    }
+
+    /**
+     * Backstop for a missed `payment_link.paid` webhook — the subscription
+     * analogue of registration's QR poll (QrPollingService::pollOpen). Finds
+     * pending razorpay rows old enough to have been paid, asks Razorpay for the
+     * link status, and activates any that are `paid`. Idempotent (activation
+     * no-ops an already-active row). Returns the number activated.
+     */
+    public function reconcilePending(): int
+    {
+        $minAge = (int) config('payments.poll_min_age_seconds', 20);
+        $windowH = (int) config('subscription.reconcile_window_hours', 48);
+
+        $rows = SubscriptionHistory::query()
+            ->where('source', 'razorpay')
+            ->where('status', SubscriptionHistory::STATUS_PENDING)
+            ->where('is_active', false)
+            ->where('created_at', '<=', now()->subSeconds($minAge))
+            ->where('created_at', '>=', now()->subHours($windowH))
+            ->orderBy('id')
+            ->limit(200)
+            ->get();
+
+        $activated = 0;
+        foreach ($rows as $row) {
+            try {
+                $links = app(RazorpayClient::class)->paymentLinksByReference((string) $row->transaction_id);
+            } catch (\Throwable $e) {
+                Log::warning('Subscription reconcile: link lookup failed', ['ref' => $row->transaction_id, 'error' => $e->getMessage()]);
+
+                continue;
+            }
+
+            foreach ($links as $link) {
+                if (($link['status'] ?? null) === 'paid') {
+                    $result = $this->activateFromPaymentLink($link, []);
+                    if ($result === 'completed') {
+                        $activated++;
+                    }
+                    break;
+                }
+            }
+        }
+
+        return $activated;
     }
 
     /**

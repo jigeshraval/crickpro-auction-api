@@ -73,6 +73,18 @@ class RazorpayClient
         return $this->send(self::CHANNEL_GATEWAY, 'POST', 'payment_links', $payload, 'Create payment link', $referenceId, retry: false);
     }
 
+    /**
+     * Payment links created with a reference_id (newest first per Razorpay).
+     * Read-only backstop for a missed `payment_link.paid` webhook — mirrors
+     * qrPayments() for registration. @return list<array> payment_link entities
+     */
+    public function paymentLinksByReference(string $referenceId): array
+    {
+        $response = $this->send(self::CHANNEL_GATEWAY, 'GET', 'payment_links', ['reference_id' => $referenceId], 'Fetch payment links', $referenceId, retry: true);
+
+        return array_values((array) ($response['payment_links'] ?? []));
+    }
+
     /** @return list<array> payment entities made against the QR */
     public function qrPayments(string $qrId): array
     {

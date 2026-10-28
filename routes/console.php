@@ -11,6 +11,9 @@ Artisan::command('inspire', function () {
 // Registration payments: catch Razorpay QR payments whose webhook was missed.
 Schedule::command('payments:poll-qrs')->everyMinute()->withoutOverlapping();
 
+// Subscriptions: catch razorpay payment links paid whose payment_link.paid webhook was missed.
+Schedule::command('subscription:reconcile')->everyMinute()->withoutOverlapping();
+
 // Registration payments: re-send payouts stuck in `queued` with no RazorpayX id (idempotent).
 Schedule::command('payments:recover-payouts')->everyFiveMinutes()->withoutOverlapping();
 
