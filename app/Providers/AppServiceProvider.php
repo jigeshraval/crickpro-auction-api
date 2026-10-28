@@ -27,7 +27,7 @@ class AppServiceProvider extends ServiceProvider
         // the per-IP cap only stops abuse.
         RateLimiter::for('registration-status', fn (Request $request) => [
             Limit::perMinute(40)->by('reg-status:'.$request->route('registrationToken')),
-            Limit::perMinute(1200)->by('reg-status-ip:'.$request->ip()),
+            Limit::perMinute(1200)->by('reg-status-ip:'.ipAddress()),
         ]);
     }
 }

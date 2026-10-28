@@ -16,7 +16,8 @@ class SubscriptionPlansTest extends TestCase
 
     private function token(): string
     {
-        User::factory()->create(['email' => 'organiser@example.com', 'password' => bcrypt('Passw0rd1')]);
+        // India → INR, so the ₹-symbol price assertions below hold.
+        User::factory()->create(['email' => 'organiser@example.com', 'password' => bcrypt('Passw0rd1'), 'country' => 'IN']);
 
         return $this->postJson('/v1/auth/login-password', [
             'email' => 'organiser@example.com', 'password' => 'Passw0rd1',
@@ -45,9 +46,12 @@ class SubscriptionPlansTest extends TestCase
 
     public function test_an_unpriced_pack_is_served_without_a_price_string(): void
     {
-        // No TEAM_PACK_PRICE_* configured — the store stays authoritative and the
-        // web renders the tier without a figure rather than inventing one.
-        config(['subscription.team_packs' => ['12_teams' => ['teams' => 12, 'price' => null]]]);
+        // No price in the matrix and none on the pack — the web renders the tier
+        // without a figure rather than inventing one.
+        config([
+            'subscription.prices' => [],
+            'subscription.team_packs' => ['12_teams' => ['teams' => 12, 'price' => null]],
+        ]);
 
         $plan = $this->withHeader('Authorization', 'Bearer '.$this->token())
             ->getJson('/v1/subscription/plans')

@@ -46,4 +46,49 @@ return [
 
     /* Teams allowed on an auction with no active plan. */
     'free_teams' => (int) env('SUBSCRIPTION_FREE_TEAMS', 2),
+
+    /*
+     |--------------------------------------------------------------------------
+     | Web (Razorpay Payment Link) purchase — country → currency → gateway
+     |--------------------------------------------------------------------------
+     | The native apps buy packs through RevenueCat (store billing); the web has
+     | no billing SDK, so it buys via a Razorpay Payment Link in the buyer's
+     | country currency. These are resolved by SubscriptionPaymentsResolver from
+     | users.country (ISO2).
+     |
+     |  IN → INR razorpay · LK → LKR razorpay · BD → BDT razorpay
+     |  PK → whatsapp (payments disabled for now; Stripe later)
+     |  everything else → USD razorpay
+     |
+     | NOTE: the non-INR prices below are converted DRAFTS — adjust to taste.
+     | Razorpay charges in the currency's smallest unit; the per-tier numbers
+     | here are MAJOR units (SubscriptionService multiplies by 100). A link in a
+     | non-INR currency only succeeds if that currency is enabled on the Razorpay
+     | account (India merchants are often INR-only + international cards).
+     */
+    'country_gateway' => [
+        'IN' => ['currency' => 'INR', 'gateway' => 'razorpay'],
+        'LK' => ['currency' => 'LKR', 'gateway' => 'razorpay'],
+        'BD' => ['currency' => 'BDT', 'gateway' => 'razorpay'],
+        'PK' => ['currency' => 'PKR', 'gateway' => 'whatsapp'],
+    ],
+
+    /* Any country not listed above. */
+    'default_gateway' => ['currency' => 'USD', 'gateway' => 'razorpay'],
+
+    'currency_symbols' => [
+        'INR' => '₹',
+        'LKR' => 'Rs',
+        'BDT' => '৳',
+        'USD' => '$',
+        'PKR' => 'Rs',
+    ],
+
+    /* Per-currency tier prices (MAJOR units). Keyed to the team_packs product ids. */
+    'prices' => [
+        'INR' => ['4_teams' => 679, '6_teams' => 1149, '8_teams' => 1699, '12_teams' => 1999, '16_teams' => 2799, '20_teams' => 3499, '30_teams' => 4499],
+        'LKR' => ['4_teams' => 2300, '6_teams' => 3900, '8_teams' => 5800, '12_teams' => 6800, '16_teams' => 9500, '20_teams' => 11900, '30_teams' => 15300],
+        'BDT' => ['4_teams' => 900, '6_teams' => 1550, '8_teams' => 2300, '12_teams' => 2700, '16_teams' => 3800, '20_teams' => 4700, '30_teams' => 6100],
+        'USD' => ['4_teams' => 8, '6_teams' => 13, '8_teams' => 20, '12_teams' => 23, '16_teams' => 32, '20_teams' => 40, '30_teams' => 52],
+    ],
 ];

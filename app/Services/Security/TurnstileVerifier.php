@@ -31,7 +31,9 @@ class TurnstileVerifier
 
         $secret = (string) config('services.turnstile.secret');
         $hostnames = array_values(array_filter(array_map('trim', explode(',', (string) config('services.turnstile.hostnames')))));
-        $token = $request->input('cf-turnstile-response');
+        // Body field (invite-join form posts it) or header (the auth screens set
+        // it so the middleware needn't touch each payload).
+        $token = $request->input('cf-turnstile-response') ?: $request->header('cf-turnstile-response');
 
         if ($secret === '' || $hostnames === [] || ! is_string($token) || $token === '' || strlen($token) > 2048) {
             return false;
@@ -41,7 +43,7 @@ class TurnstileVerifier
             $response = Http::asForm()->timeout(10)->post(self::URL, [
                 'secret' => $secret,
                 'response' => $token,
-                'remoteip' => $request->header('CF-Connecting-IP') ?: $request->ip(),
+                'remoteip' => ipAddress(),
             ]);
             if (! $response->successful()) {
                 return false;

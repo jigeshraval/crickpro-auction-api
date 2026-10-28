@@ -4,7 +4,11 @@ namespace App\Services;
 
 use App\Models\Auction;
 use App\Models\SubscriptionHistory;
+use App\Models\User;
+use App\Services\Payments\RazorpayClient;
+use App\Services\Payments\SubscriptionPaymentsResolver;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * Auction subscription business logic. Team packs are per-auction: buying a pack
@@ -38,17 +42,22 @@ class SubscriptionService
      * would drift from the one this service actually enforces. `priceString` is
      * null for any pack with no configured price.
      */
-    public function teamPacks(): array
+    public function teamPacks(?string $currency = null): array
     {
-        $symbol = (string) config('subscription.currency_symbol', '');
-        $currency = (string) config('subscription.currency', '');
+        $currency = strtoupper($currency ?: (string) config('subscription.currency', 'INR'));
+        $symbol = SubscriptionPaymentsResolver::symbol($currency);
 
         $packs = [];
 
         foreach ((array) config('subscription.team_packs', []) as $productId => $pack) {
             $teams = (int) (is_array($pack) ? ($pack['teams'] ?? 0) : $pack);
-            $raw = is_array($pack) ? ($pack['price'] ?? null) : null;
-            $price = ($raw === null || $raw === '') ? null : (float) $raw;
+            // A price set directly on the pack (legacy/override config) wins;
+            // otherwise take it from the per-currency price matrix.
+            $legacy = is_array($pack) ? ($pack['price'] ?? null) : null;
+            $raw = ($legacy !== null && $legacy !== '')
+                ? (float) $legacy
+                : SubscriptionPaymentsResolver::price($currency, (string) $productId);
+            $price = $raw === null ? null : (float) $raw;
 
             $packs[] = [
                 'productId' => (string) $productId,
@@ -65,6 +74,119 @@ class SubscriptionService
         usort($packs, fn (array $a, array $b) => $a['teams'] <=> $b['teams']);
 
         return $packs;
+    }
+
+    /**
+     * Start a web (Razorpay Payment Link) purchase of a team pack for an auction.
+     * Creates a PENDING subscription_history row and a hosted payment link; the
+     * `payment_link.paid` webhook activates it. Returns the link's short_url +
+     * our reference id. $teams is the pack TIER (4/6/8/12/16/20/30).
+     *
+     * @return array{shortUrl: string, referenceId: string}
+     */
+    public function createRazorpayCheckout(User $user, Auction $auction, int $teams, string $currency, ?string $email = null): array
+    {
+        $planCode = $teams.'_teams';
+        if (! array_key_exists($planCode, (array) config('subscription.team_packs', []))) {
+            throw new \InvalidArgumentException("Unknown team pack: {$planCode}.");
+        }
+
+        $currency = strtoupper($currency);
+        $price = SubscriptionPaymentsResolver::price($currency, $planCode);
+        if ($price === null) {
+            throw new \RuntimeException("No {$currency} price configured for {$planCode}.");
+        }
+
+        $amountMinor = $price * 100; // Razorpay charges the smallest unit.
+        $referenceId = 'sub_'.$auction->id.'_'.Str::lower(Str::random(18));
+
+        $sub = SubscriptionHistory::create([
+            'id_user' => $user->id,
+            'id_auction' => $auction->id,
+            'plan_id' => $planCode,
+            'max_teams' => $this->resolveMaxTeams($planCode),
+            'amount' => $price,
+            'currency' => $currency,
+            'transaction_id' => $referenceId,
+            'source' => 'razorpay',
+            'store' => 'web',
+            'is_active' => false,
+            'status' => SubscriptionHistory::STATUS_PENDING,
+            'metadata' => ['referenceId' => $referenceId, 'amountMinor' => $amountMinor],
+        ]);
+
+        $base = rtrim((string) config('services.auction_web.url', ''), '/');
+        $callback = $base !== '' ? $base.'/subscription?status=processing' : null;
+
+        try {
+            $resp = app(RazorpayClient::class)->createPaymentLink(
+                $amountMinor,
+                $currency,
+                "CrickPro Auction — up to {$teams} teams",
+                $referenceId,
+                [
+                    'userId' => (string) $user->id,
+                    'auctionId' => (string) $auction->id,
+                    'teams' => (string) $teams,
+                    'planCode' => $planCode,
+                ],
+                ['name' => (string) $user->name, 'email' => $email ?: $user->email, 'contact' => $user->mobile],
+                $callback,
+            );
+        } catch (\Throwable $e) {
+            // Never leave a dangling pending row if the link never got created.
+            $sub->update(['status' => SubscriptionHistory::STATUS_CANCELLED, 'is_active' => false]);
+            throw $e;
+        }
+
+        $sub->update(['metadata' => array_merge($sub->metadata ?? [], [
+            'paymentLinkId' => $resp['id'] ?? null,
+            'shortUrl' => $resp['short_url'] ?? null,
+        ])]);
+
+        return ['shortUrl' => (string) ($resp['short_url'] ?? ''), 'referenceId' => $referenceId];
+    }
+
+    /**
+     * Activate a pending razorpay subscription from a `payment_link.paid` webhook.
+     * Idempotent: unknown ref / already-active / amount-or-currency mismatch are
+     * all no-ops. Returns the outcome string stored on the webhook event.
+     */
+    public function activateFromPaymentLink(array $link, array $payment): string
+    {
+        $ref = (string) ($link['reference_id'] ?? '');
+        if ($ref === '') {
+            return 'ignored: no reference_id';
+        }
+
+        $sub = SubscriptionHistory::where('transaction_id', $ref)->where('source', 'razorpay')->first();
+        if (! $sub) {
+            return 'ignored: unknown reference';
+        }
+        if ($sub->is_active && $sub->status === SubscriptionHistory::STATUS_ACTIVE) {
+            return 'ignored: already active';
+        }
+
+        $currency = strtoupper((string) ($link['currency'] ?? ''));
+        $paidMinor = (int) ($link['amount_paid'] ?? $link['amount'] ?? 0);
+        $expectedMinor = (int) round(((float) $sub->amount) * 100);
+        if ($currency !== strtoupper((string) $sub->currency) || $paidMinor < $expectedMinor) {
+            return 'ignored: amount/currency mismatch';
+        }
+
+        $sub->update([
+            'is_active' => true,
+            'status' => SubscriptionHistory::STATUS_ACTIVE,
+            'starts_at' => now(),
+            'metadata' => array_merge($sub->metadata ?? [], [
+                'paymentId' => $payment['id'] ?? null,
+                'paymentLinkId' => $link['id'] ?? ($sub->metadata['paymentLinkId'] ?? null),
+            ]),
+        ]);
+
+        $this->syncAuction($sub->id_auction);
+
+        return 'completed';
     }
 
     /**

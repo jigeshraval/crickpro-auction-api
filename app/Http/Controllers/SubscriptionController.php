@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\SubscriptionHistoryResource;
 use App\Models\Auction;
+use App\Services\Payments\SubscriptionPaymentsResolver;
 use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,12 +20,78 @@ class SubscriptionController extends Controller
      * billing SDK — so the subscription screen shows the same tiers this API
      * enforces rather than a hardcoded copy. The native apps use RevenueCat.
      */
-    public function plans(): JsonResponse
+    public function plans(Request $request): JsonResponse
     {
+        $resolved = SubscriptionPaymentsResolver::forUser($request->user());
+
         return response()->json([
             'status' => 'success',
-            'data' => $this->subs->teamPacks(),
+            'data' => $this->subs->teamPacks($resolved['currency']),
+            'currency' => $resolved['currency'],
+            'currencySymbol' => SubscriptionPaymentsResolver::symbol($resolved['currency']),
+            'gateway' => $resolved['gateway'],
             'freeTeams' => (int) config('subscription.free_teams', 2),
+        ]);
+    }
+
+    /**
+     * Start a web purchase of a team pack for an auction. Resolves the buyer's
+     * country → gateway: Razorpay returns a hosted payment-link `shortUrl` (the
+     * payment_link.paid webhook activates it); disabled countries (Pakistan) get
+     * `{gateway:"whatsapp"}` so the client hands them to support instead.
+     */
+    public function checkout(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'auctionId' => 'required|integer|exists:auctions,id',
+            'teams' => 'required|integer',
+            // Web users sign in by phone, so many have no email. Razorpay requires
+            // one on international (non-INR) links, so the client collects it when
+            // missing. Persisted below so receipts + later checkouts have it.
+            'email' => 'nullable|email',
+        ]);
+
+        $user = $request->user();
+        $auction = Auction::find($data['auctionId']);
+        if ($auction->id_owner !== $user->id) {
+            return response()->json(['status' => 'error', 'message' => 'Not your auction.'], 403);
+        }
+
+        // Keep an existing account email; only fill one the user just supplied.
+        if (! empty($data['email']) && empty($user->email)) {
+            try {
+                $user->forceFill(['email' => $data['email']])->save();
+            } catch (\Throwable $e) {
+                // A unique-email clash shouldn't block checkout — still use it on the link.
+            }
+        }
+        $effectiveEmail = $user->email ?: ($data['email'] ?? null);
+
+        $resolved = SubscriptionPaymentsResolver::forUser($user);
+        if ($resolved['gateway'] === SubscriptionPaymentsResolver::GATEWAY_WHATSAPP) {
+            return response()->json(['status' => 'success', 'gateway' => 'whatsapp']);
+        }
+
+        // International (non-INR) links require a customer email; make the need explicit.
+        if ($resolved['currency'] !== 'INR' && empty($effectiveEmail)) {
+            return response()->json(['status' => 'error', 'code' => 'EMAIL_REQUIRED', 'message' => 'Please add an email to continue.'], 422);
+        }
+
+        try {
+            $link = $this->subs->createRazorpayCheckout($user, $auction, (int) $data['teams'], $resolved['currency'], $effectiveEmail);
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['status' => 'error', 'message' => 'Could not start checkout. Please try again.'], 502);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'gateway' => 'razorpay',
+            'shortUrl' => $link['shortUrl'],
+            'referenceId' => $link['referenceId'],
         ]);
     }
 

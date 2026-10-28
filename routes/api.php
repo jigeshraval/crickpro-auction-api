@@ -47,28 +47,32 @@ Route::prefix('v1/auth')->group(function () {
     Route::post('check-user', [AuthController::class, 'checkUser'])->middleware('auth.throttle:check-user');
     Route::post('check-user-mobile', [AuthController::class, 'checkUserMobile'])->middleware('auth.throttle:check-user-mobile');
 
-    Route::post('send-email-otp', [AuthController::class, 'sendEmailOtp'])->middleware('auth.throttle:send-email-otp');
+    // `turnstile:auction_auth` runs after the throttle (so a flood 429s before
+    // any CF siteverify call) and ONLY for the web client — see VerifyTurnstile.
+    Route::post('send-email-otp', [AuthController::class, 'sendEmailOtp'])->middleware(['auth.throttle:send-email-otp', 'turnstile:auction_auth']);
     Route::post('verify-email-otp', [AuthController::class, 'verifyEmailOtp'])->middleware('auth.throttle:verify-email-otp');
 
-    Route::post('send-whatsapp-otp', [AuthController::class, 'sendWhatsappOtp'])->middleware('auth.throttle:send-whatsapp-otp');
+    Route::post('send-whatsapp-otp', [AuthController::class, 'sendWhatsappOtp'])->middleware(['auth.throttle:send-whatsapp-otp', 'turnstile:auction_auth']);
     Route::post('verify-whatsapp-otp', [AuthController::class, 'verifyWhatsappOtp'])->middleware('auth.throttle:verify-whatsapp-otp');
 
-    Route::post('login-password', [AuthController::class, 'loginPassword'])->middleware('auth.throttle:login-password');
-    Route::post('login-password-mobile', [AuthController::class, 'loginPasswordMobile'])->middleware('auth.throttle:login-password-mobile');
+    Route::post('login-password', [AuthController::class, 'loginPassword'])->middleware(['auth.throttle:login-password', 'turnstile:auction_auth']);
+    Route::post('login-password-mobile', [AuthController::class, 'loginPasswordMobile'])->middleware(['auth.throttle:login-password-mobile', 'turnstile:auction_auth']);
 
-    Route::post('register', [AuthController::class, 'register'])->middleware('auth.throttle:register');
+    Route::post('register', [AuthController::class, 'register'])->middleware(['auth.throttle:register', 'turnstile:auction_auth']);
 
     // Seamless "Continue with CrickPro" — exchange a crickpro-app handoff token
-    // for an auction session (creates/connects a passwordless account).
+    // for an auction session (creates/connects a passwordless account). No
+    // Turnstile: the handoff token is the credential and the web reaches this
+    // only via a crickpro-app hand-off (no widget on that path).
     Route::post('crickpro', [CrickproAuthController::class, 'connect'])->middleware('auth.throttle:login-password');
 
     // "CrickPro Connect" — log in with a CrickPro User Id + Web Access Code
     // (validated against crickpro-api-v2), creating/connecting the account.
-    Route::post('crickpro-connect', [CrickproAuthController::class, 'connectWithAccessCode'])->middleware('auth.throttle:login-password');
+    Route::post('crickpro-connect', [CrickproAuthController::class, 'connectWithAccessCode'])->middleware(['auth.throttle:login-password', 'turnstile:auction_auth']);
 
     Route::post('verify-reset-otp-mobile', [AuthController::class, 'verifyResetOtpMobile'])->middleware('auth.throttle:verify-reset-otp-mobile');
-    Route::post('reset-password-mobile', [AuthController::class, 'resetPasswordMobile'])->middleware('auth.throttle:reset-password-mobile');
-    Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('auth.throttle:reset-password');
+    Route::post('reset-password-mobile', [AuthController::class, 'resetPasswordMobile'])->middleware(['auth.throttle:reset-password-mobile', 'turnstile:auction_auth']);
+    Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware(['auth.throttle:reset-password', 'turnstile:auction_auth']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('user', [AuthController::class, 'user']);
@@ -237,6 +241,8 @@ Route::prefix('v1/subscription')->middleware('auth:sanctum')->group(function () 
     Route::get('plans', [SubscriptionController::class, 'plans']);
     Route::get('status', [SubscriptionController::class, 'status']);
     Route::post('confirm', [SubscriptionController::class, 'confirm']);
+    // Web Razorpay Payment Link checkout (native apps use RevenueCat/confirm).
+    Route::post('checkout', [SubscriptionController::class, 'checkout']);
 });
 
 // Overlay feed for crickpro-auction-overlay — crickpro-overlay parity: global

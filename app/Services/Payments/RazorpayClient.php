@@ -26,6 +26,53 @@ class RazorpayClient
             isset($payload['notes']['payment_id']) ? (string) $payload['notes']['payment_id'] : null, retry: false);
     }
 
+    /**
+     * Create a hosted Razorpay Payment Link (used for web subscription checkout).
+     * $amountMinor is in the currency's smallest unit (paise/cents). Returns the
+     * decoded entity — callers need `id` (plink_…) + `short_url`. Not retried
+     * (creating twice would make two links); idempotency is our reference_id.
+     */
+    public function createPaymentLink(
+        int $amountMinor,
+        string $currency,
+        string $description,
+        string $referenceId,
+        array $notes = [],
+        array $customer = [],
+        ?string $callbackUrl = null,
+    ): array {
+        if ($amountMinor <= 0) {
+            throw new \InvalidArgumentException("Payment link amount must be positive, got {$amountMinor}.");
+        }
+
+        $payload = [
+            'amount' => $amountMinor,
+            'currency' => strtoupper($currency),
+            'description' => $description,
+            'reference_id' => $referenceId,
+            // We confirm activation via the payment_link.paid webhook, not reminders.
+            'reminder_enable' => false,
+            'notify' => ['sms' => false, 'email' => false],
+        ];
+
+        // Razorpay rejects a customer block without an email ("customer email is
+        // required"), so send it only when we have one — otherwise omit it and
+        // let the buyer fill their details on the hosted page.
+        $customer = array_filter($customer, fn ($v) => $v !== null && $v !== '');
+        if ($customer !== [] && ! empty($customer['email'])) {
+            $payload['customer'] = $customer;
+        }
+        if ($notes !== []) {
+            $payload['notes'] = $notes;
+        }
+        if ($callbackUrl !== null && $callbackUrl !== '') {
+            $payload['callback_url'] = $callbackUrl;
+            $payload['callback_method'] = 'get';
+        }
+
+        return $this->send(self::CHANNEL_GATEWAY, 'POST', 'payment_links', $payload, 'Create payment link', $referenceId, retry: false);
+    }
+
     /** @return list<array> payment entities made against the QR */
     public function qrPayments(string $qrId): array
     {

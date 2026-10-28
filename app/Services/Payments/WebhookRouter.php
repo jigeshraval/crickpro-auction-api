@@ -44,6 +44,12 @@ class WebhookRouter
             'payout.queued', 'payout.pending', 'payout.initiated', 'payout.updated',
             'payout.processed', 'payout.failed', 'payout.rejected', 'payout.reversed' => app(WithdrawalService::class)->onPayoutEvent($event, (array) ($payload['payout']['entity'] ?? [])),
 
+            // Web subscription (team pack) purchase via a Razorpay Payment Link.
+            'payment_link.paid' => app(\App\Services\SubscriptionService::class)->activateFromPaymentLink(
+                (array) ($payload['payment_link']['entity'] ?? []),
+                (array) ($payload['payment']['entity'] ?? []),
+            ),
+
             default => 'ignored: unhandled event',
         };
     }

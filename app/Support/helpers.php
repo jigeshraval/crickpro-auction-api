@@ -38,8 +38,25 @@ if (! function_exists('cfCountry')) {
 }
 
 if (! function_exists('ipAddress')) {
+    /**
+     * Real client IP. Behind Cloudflare `request()->ip()` is the CF edge socket,
+     * so the connecting-visitor IP comes from Cloudflare's `CF-Connecting-IP`
+     * header (set by CF, overwritten on every edge hop — the origin must only
+     * accept CF traffic for it to be trustworthy; see TrustProxies CF ranges).
+     * Falls back to the socket IP off-Cloudflare (local/dev).
+     */
     function ipAddress(): string
     {
-        return request()?->ip() ?? '127.0.0.1';
+        $req = request();
+        if (! $req) {
+            return '127.0.0.1';
+        }
+
+        $cf = trim((string) $req->header('CF-Connecting-IP'));
+        if ($cf !== '') {
+            return $cf;
+        }
+
+        return $req->ip() ?? '127.0.0.1';
     }
 }
