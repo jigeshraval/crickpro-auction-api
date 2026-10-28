@@ -22,6 +22,9 @@ trait PaymentTestHelpers
             'payments.razorpay.key_id' => 'rzp_test_key',
             'payments.razorpay.key_secret' => 'rzp_test_secret',
             'payments.razorpay.webhook_secret' => 'whsec_gateway',
+            // Signature enforcement is on in tests (runtime default is a diagnostic
+            // bypass) so the real verify/reject path stays covered.
+            'payments.razorpay.webhook_skip_signature' => false,
             'payments.razorpayx.key_id' => 'rzp_test_key',
             'payments.razorpayx.key_secret' => 'rzp_test_secret',
             'payments.razorpayx.account_number' => '2323230000000000',
