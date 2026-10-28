@@ -49,6 +49,9 @@ class SubscriptionController extends Controller
             // one on international (non-INR) links, so the client collects it when
             // missing. Persisted below so receipts + later checkouts have it.
             'email' => 'nullable|email',
+            // Where Razorpay redirects after payment (signed params → verify-return).
+            // Validated against an allowlist below; dev passes its localhost origin.
+            'returnUrl' => 'nullable|url',
         ]);
 
         $user = $request->user();
@@ -78,7 +81,8 @@ class SubscriptionController extends Controller
         }
 
         try {
-            $link = $this->subs->createRazorpayCheckout($user, $auction, (int) $data['teams'], $resolved['currency'], $effectiveEmail);
+            $callbackUrl = $this->safeReturnUrl($data['returnUrl'] ?? null);
+            $link = $this->subs->createRazorpayCheckout($user, $auction, (int) $data['teams'], $resolved['currency'], $effectiveEmail, $callbackUrl);
         } catch (\InvalidArgumentException|\RuntimeException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
         } catch (\Throwable $e) {
@@ -93,6 +97,49 @@ class SubscriptionController extends Controller
             'shortUrl' => $link['shortUrl'],
             'referenceId' => $link['referenceId'],
         ]);
+    }
+
+    /**
+     * Activate from the signed params Razorpay appended to the callback_url
+     * (browser return). Webhook-independent — the buyer's own redirect proves
+     * payment. The signature is verified in the service; no auth-owner check is
+     * needed because only a valid Razorpay signature can activate.
+     */
+    public function verifyReturn(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'razorpay_payment_link_id' => 'nullable|string',
+            'razorpay_payment_link_reference_id' => 'required|string',
+            'razorpay_payment_link_status' => 'nullable|string',
+            'razorpay_payment_id' => 'nullable|string',
+            'razorpay_signature' => 'required|string',
+        ]);
+
+        $result = $this->subs->activateFromReturn($data);
+
+        $ok = $result['status'] === 'active';
+
+        return response()->json([
+            'status' => $ok ? 'success' : 'error',
+            'result' => $result['status'], // active | not_paid | invalid | unknown
+            'auctionId' => $result['auctionId'],
+        ], $ok ? 200 : ($result['status'] === 'invalid' ? 422 : 200));
+    }
+
+    /**
+     * Only allow a redirect back to the configured web app or localhost (dev).
+     * Anything else falls through to the server-configured callback (null here).
+     */
+    private function safeReturnUrl(?string $url): ?string
+    {
+        if (! $url) {
+            return null;
+        }
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $webHost = strtolower((string) parse_url((string) config('services.auction_web.url'), PHP_URL_HOST));
+        $allowed = array_filter([$webHost, 'localhost', '127.0.0.1']);
+
+        return in_array($host, $allowed, true) ? $url : null;
     }
 
     /**

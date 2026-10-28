@@ -85,7 +85,7 @@ class SubscriptionService
      *
      * @return array{shortUrl: string, referenceId: string}
      */
-    public function createRazorpayCheckout(User $user, Auction $auction, int $teams, string $currency, ?string $email = null): array
+    public function createRazorpayCheckout(User $user, Auction $auction, int $teams, string $currency, ?string $email = null, ?string $callbackUrl = null): array
     {
         $planCode = $teams.'_teams';
         if (! array_key_exists($planCode, (array) config('subscription.team_packs', []))) {
@@ -116,8 +116,11 @@ class SubscriptionService
             'metadata' => ['referenceId' => $referenceId, 'amountMinor' => $amountMinor],
         ]);
 
+        // Razorpay appends signed params to this on redirect; the web
+        // `/subscription/callback` reads them and calls verify-return. A caller
+        // (dev) may pass its own origin's callback; else the configured web base.
         $base = rtrim((string) config('services.auction_web.url', ''), '/');
-        $callback = $base !== '' ? $base.'/subscription?status=processing' : null;
+        $callback = $callbackUrl ?: ($base !== '' ? $base.'/subscription/callback' : null);
 
         try {
             $resp = app(RazorpayClient::class)->createPaymentLink(
@@ -191,6 +194,59 @@ class SubscriptionService
     }
 
     /**
+     * Activate from the signed params Razorpay appends to the Payment Link
+     * callback_url (browser return). Independent of the webhook — the buyer's
+     * own redirect carries cryptographic proof of payment, so this works even
+     * when Razorpay can't reach our webhook endpoint. Idempotent.
+     *
+     * Signature = HMAC_SHA256("{linkId}|{referenceId}|{status}|{paymentId}", KEY_SECRET).
+     *
+     * @param  array{razorpay_payment_link_id?:string, razorpay_payment_link_reference_id?:string, razorpay_payment_link_status?:string, razorpay_payment_id?:string, razorpay_signature?:string}  $p
+     * @return array{status:string, auctionId:?int}
+     */
+    public function activateFromReturn(array $p): array
+    {
+        $linkId = (string) ($p['razorpay_payment_link_id'] ?? '');
+        $ref = (string) ($p['razorpay_payment_link_reference_id'] ?? '');
+        $status = (string) ($p['razorpay_payment_link_status'] ?? '');
+        $paymentId = (string) ($p['razorpay_payment_id'] ?? '');
+        $signature = (string) ($p['razorpay_signature'] ?? '');
+        $secret = (string) config('payments.razorpay.key_secret', '');
+
+        if ($secret === '' || $ref === '' || $signature === '') {
+            return ['status' => 'invalid', 'auctionId' => null];
+        }
+
+        $expected = hash_hmac('sha256', $linkId.'|'.$ref.'|'.$status.'|'.$paymentId, $secret);
+        if (! hash_equals($expected, $signature)) {
+            Log::warning('Subscription return: signature mismatch', ['ref' => $ref]);
+
+            return ['status' => 'invalid', 'auctionId' => null];
+        }
+
+        $sub = SubscriptionHistory::where('transaction_id', $ref)->where('source', 'razorpay')->first();
+        if (! $sub) {
+            return ['status' => 'unknown', 'auctionId' => null];
+        }
+        if ($status !== 'paid') {
+            return ['status' => 'not_paid', 'auctionId' => $sub->id_auction];
+        }
+        if ($sub->is_active && $sub->status === SubscriptionHistory::STATUS_ACTIVE) {
+            return ['status' => 'active', 'auctionId' => $sub->id_auction];
+        }
+
+        $sub->update([
+            'is_active' => true,
+            'status' => SubscriptionHistory::STATUS_ACTIVE,
+            'starts_at' => now(),
+            'metadata' => array_merge($sub->metadata ?? [], ['paymentId' => $paymentId ?: null, 'activatedVia' => 'return']),
+        ]);
+        $this->syncAuction($sub->id_auction);
+
+        return ['status' => 'active', 'auctionId' => $sub->id_auction];
+    }
+
+    /**
      * Backstop for a missed `payment_link.paid` webhook — the subscription
      * analogue of registration's QR poll (QrPollingService::pollOpen). Finds
      * pending razorpay rows old enough to have been paid, asks Razorpay for the
@@ -212,6 +268,8 @@ class SubscriptionService
             ->limit(200)
             ->get();
 
+        Log::info('Subscription reconcile: scanning pending rows', ['count' => $rows->count(), 'minAgeSec' => $minAge, 'windowHours' => $windowH]);
+
         $activated = 0;
         foreach ($rows as $row) {
             try {
@@ -222,9 +280,18 @@ class SubscriptionService
                 continue;
             }
 
+            // Surface exactly what Razorpay returned for this reference so a prod
+            // run is self-diagnosing (empty = key/mode/API; status != paid = unpaid).
+            Log::info('Subscription reconcile: link lookup', [
+                'ref' => $row->transaction_id,
+                'returned' => count($links),
+                'statuses' => array_map(fn ($l) => $l['status'] ?? null, $links),
+            ]);
+
             foreach ($links as $link) {
                 if (($link['status'] ?? null) === 'paid') {
                     $result = $this->activateFromPaymentLink($link, []);
+                    Log::info('Subscription reconcile: activation attempt', ['ref' => $row->transaction_id, 'result' => $result]);
                     if ($result === 'completed') {
                         $activated++;
                     }
@@ -232,6 +299,8 @@ class SubscriptionService
                 }
             }
         }
+
+        Log::info('Subscription reconcile: done', ['activated' => $activated]);
 
         return $activated;
     }

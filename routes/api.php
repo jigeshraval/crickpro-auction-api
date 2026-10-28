@@ -243,6 +243,9 @@ Route::prefix('v1/subscription')->middleware('auth:sanctum')->group(function () 
     Route::post('confirm', [SubscriptionController::class, 'confirm']);
     // Web Razorpay Payment Link checkout (native apps use RevenueCat/confirm).
     Route::post('checkout', [SubscriptionController::class, 'checkout']);
+    // Browser-return activation: verify the signed params Razorpay appends to the
+    // callback_url and activate — a webhook-independent path (rides the buyer's tab).
+    Route::post('verify-return', [SubscriptionController::class, 'verifyReturn']);
 });
 
 // Overlay feed for crickpro-auction-overlay — crickpro-overlay parity: global
