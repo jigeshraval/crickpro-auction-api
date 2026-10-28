@@ -100,6 +100,27 @@ class SubscriptionController extends Controller
     }
 
     /**
+     * The signed-in user's own purchase history (newest first), paginated. Feeds
+     * the web/app "Purchase history" screens; invoices are rendered client-side
+     * from these rows. Excludes soft-deleted rows.
+     */
+    public function history(Request $request): JsonResponse
+    {
+        $perPage = min(50, max(1, (int) $request->integer('perPage', 20)));
+
+        $rows = \App\Models\SubscriptionHistory::query()
+            ->where('id_user', $request->user()->id)
+            ->where('status', '!=', \App\Models\SubscriptionHistory::STATUS_DELETED)
+            ->orderByDesc('id')
+            ->simplePaginate($perPage);
+
+        return response()->json([
+            'status' => 'success',
+            ...paginated(SubscriptionHistoryResource::collection($rows), 'subscriptions', true),
+        ]);
+    }
+
+    /**
      * Activate from the signed params Razorpay appended to the callback_url
      * (browser return). Webhook-independent — the buyer's own redirect proves
      * payment. The signature is verified in the service; no auth-owner check is

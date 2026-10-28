@@ -240,6 +240,8 @@ Route::prefix('v1/players')->middleware('auth:sanctum')->group(function () {
 Route::prefix('v1/subscription')->middleware('auth:sanctum')->group(function () {
     Route::get('plans', [SubscriptionController::class, 'plans']);
     Route::get('status', [SubscriptionController::class, 'status']);
+    // The user's own purchase history (paginated) — feeds the purchase-history screens.
+    Route::get('history', [SubscriptionController::class, 'history']);
     Route::post('confirm', [SubscriptionController::class, 'confirm']);
     // Web Razorpay Payment Link checkout (native apps use RevenueCat/confirm).
     Route::post('checkout', [SubscriptionController::class, 'checkout']);
