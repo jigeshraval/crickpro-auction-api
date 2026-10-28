@@ -53,7 +53,11 @@ return [
     // player registration form. Hostnames = comma-separated frontend hosts.
     'turnstile' => [
         'secret' => env('TURNSTILE_SECRET', ''),
-        'hostnames' => env('TURNSTILE_HOSTNAMES', ''),
+        // Allowed hostnames (CSV) the token's `hostname` is checked against.
+        // `localhost`/`127.0.0.1` are always appended so a dev frontend pointed
+        // at this API can authenticate — the Cloudflare widget must also list
+        // localhost, so no real relaxation of production domains.
+        'hostnames' => trim(env('TURNSTILE_HOSTNAMES', '').',localhost,127.0.0.1', ','),
     ],
 
     // Public web frontend (crickpro-auction) — base for shareable invite links.
