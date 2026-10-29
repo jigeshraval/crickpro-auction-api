@@ -26,11 +26,12 @@ class SubscriptionReturnTest extends TestCase
     {
         parent::setUp();
         $this->bootPayments();
-        config(['subscription.prices.INR.4_teams' => 679]);
+        // Payment Links are international-only (INR uses a UPI QR) → US/USD buyer.
+        config(['subscription.prices.USD.4_teams' => 8]);
         $this->fakeRazorpay([
             '*/payment_links' => fn () => Http::response(['id' => 'plink_TEST', 'short_url' => 'https://rzp.io/rzp/TEST', 'status' => 'created']),
         ]);
-        $this->owner = $this->tokenFor('organiser@example.com', 'IN');
+        $this->owner = $this->tokenFor('organiser@example.com', 'US');
         $this->auctionId = (int) $this->createAuction($this->owner)['id'];
     }
 

@@ -28,8 +28,9 @@ class SubscriptionWebhookTest extends TestCase
     {
         parent::setUp();
         $this->bootPayments();
-        // INR price for the 4-team pack so createRazorpayCheckout can price it.
-        config(['subscription.prices.INR.4_teams' => 679]);
+        // Link flow is international-only (INR uses a UPI QR). A US buyer → USD
+        // link. USD 4-team price is 8 (config matrix) → 800 cents.
+        config(['subscription.prices.USD.4_teams' => 8]);
 
         // Fake the payment-link creation Razorpay call (checkout) + the rest.
         $this->fakeRazorpay([
@@ -38,7 +39,9 @@ class SubscriptionWebhookTest extends TestCase
             ]),
         ]);
 
-        $this->owner = $this->tokenFor('organiser@example.com', 'IN');
+        // US buyer (USD link path); the login email doubles as the required
+        // customer email for international links.
+        $this->owner = $this->tokenFor('organiser@example.com', 'US');
         $this->auctionId = (int) $this->createAuction($this->owner)['id'];
     }
 
@@ -59,7 +62,7 @@ class SubscriptionWebhookTest extends TestCase
     }
 
     /** @return array<string,mixed> a payment_link.paid payload for a reference. */
-    private function paidPayload(string $ref, int $amountMinor = 67_900, string $currency = 'INR'): array
+    private function paidPayload(string $ref, int $amountMinor = 800, string $currency = 'USD'): array
     {
         return [
             'payment_link' => ['entity' => [
@@ -109,8 +112,8 @@ class SubscriptionWebhookTest extends TestCase
     {
         $ref = $this->checkout(4);
 
-        // Paid less than the 679.00 expected → ignored, stays pending.
-        $this->webhook('razorpay', 'payment_link.paid', $this->paidPayload($ref, 10_000), 'evt_sub_short')->assertOk();
+        // Wrong currency (row is USD) → ignored, stays pending.
+        $this->webhook('razorpay', 'payment_link.paid', $this->paidPayload($ref, 800, 'INR'), 'evt_sub_short')->assertOk();
 
         $this->assertSame(SubscriptionHistory::STATUS_PENDING, SubscriptionHistory::where('transaction_id', $ref)->value('status'));
         $this->assertSame('ignored: amount/currency mismatch', RazorpayWebhookEvent::where('event_id', 'evt_sub_short')->value('result'));

@@ -75,8 +75,31 @@ class SubscriptionController extends Controller
             return response()->json(['status' => 'success', 'gateway' => 'whatsapp']);
         }
 
+        // INR → a UPI QR shown inline (scan & pay, no hosted page / no email).
+        if ($resolved['currency'] === 'INR') {
+            try {
+                $qr = $this->subs->createRazorpayQr($user, $auction, (int) $data['teams']);
+            } catch (\InvalidArgumentException|\RuntimeException $e) {
+                return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+            } catch (\Throwable $e) {
+                report($e);
+
+                return response()->json(['status' => 'error', 'message' => 'Could not start checkout. Please try again.'], 502);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'gateway' => 'razorpay',
+                'mode' => 'qr',
+                'qrImageUrl' => $qr['qrImageUrl'],
+                'referenceId' => $qr['referenceId'],
+                'amount' => $qr['amount'],
+                'currency' => 'INR',
+            ]);
+        }
+
         // International (non-INR) links require a customer email; make the need explicit.
-        if ($resolved['currency'] !== 'INR' && empty($effectiveEmail)) {
+        if (empty($effectiveEmail)) {
             return response()->json(['status' => 'error', 'code' => 'EMAIL_REQUIRED', 'message' => 'Please add an email to continue.'], 422);
         }
 
@@ -94,6 +117,7 @@ class SubscriptionController extends Controller
         return response()->json([
             'status' => 'success',
             'gateway' => 'razorpay',
+            'mode' => 'link',
             'shortUrl' => $link['shortUrl'],
             'referenceId' => $link['referenceId'],
         ]);

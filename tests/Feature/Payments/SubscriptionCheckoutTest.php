@@ -10,8 +10,10 @@ use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
- * Web subscription purchase via Razorpay Payment Links: POST /v1/subscription/checkout
- * resolves country → gateway, and the payment_link.paid webhook activates the pack.
+ * Web subscription checkout: POST /v1/subscription/checkout resolves country →
+ * gateway/currency. INR → a UPI QR (scan & pay); other razorpay currencies → a
+ * Payment Link; PK → WhatsApp. Activation is by webhook (payment_link.paid /
+ * qr_code.credited) or the reconcile poll.
  */
 class SubscriptionCheckoutTest extends TestCase
 {
@@ -27,10 +29,16 @@ class SubscriptionCheckoutTest extends TestCase
                 'id' => 'plink_TEST', 'short_url' => 'https://rzp.io/i/testlink', 'status' => 'created',
                 'reference_id' => $r['reference_id'], 'amount' => $r['amount'], 'currency' => $r['currency'],
             ]),
+            // INR uses a UPI QR now.
+            '*/payments/qr_codes' => fn (HttpRequest $r) => Http::response([
+                'id' => 'qr_TEST', 'entity' => 'qr_code', 'status' => 'active',
+                'image_url' => 'https://rzp.io/i/qr_TEST', 'close_by' => now()->addMinutes(15)->timestamp,
+                'payment_amount' => $r['payment_amount'],
+            ]),
         ]);
     }
 
-    public function test_indian_buyer_gets_a_razorpay_payment_link_in_inr(): void
+    public function test_indian_buyer_gets_a_upi_qr_in_inr(): void
     {
         $token = $this->tokenFor('in@example.com', 'IN');
         $auction = $this->createAuction($token);
@@ -38,12 +46,12 @@ class SubscriptionCheckoutTest extends TestCase
         $res = $this->as($token)->postJson('/v1/subscription/checkout', ['auctionId' => $auction['id'], 'teams' => 12])
             ->assertOk()
             ->assertJsonPath('gateway', 'razorpay')
-            ->assertJsonPath('shortUrl', 'https://rzp.io/i/testlink');
+            ->assertJsonPath('mode', 'qr');
+        $this->assertNotEmpty($res->json('qrImageUrl'));
 
-        // Link created for ₹1,999 → 199900 paise, INR.
-        Http::assertSent(fn (HttpRequest $r) => str_contains($r->url(), 'payment_links')
-            && $r['amount'] === 199900 && $r['currency'] === 'INR'
-            && $r['reference_id'] === $res->json('referenceId'));
+        // QR for ₹1,999 → 199900 paise; NOT a payment link.
+        Http::assertSent(fn (HttpRequest $r) => str_contains($r->url(), 'payments/qr_codes') && $r['payment_amount'] === 199900);
+        Http::assertNotSent(fn (HttpRequest $r) => str_contains($r->url(), 'payment_links'));
 
         $this->assertDatabaseHas('subscription_history', [
             'id_auction' => $auction['id'], 'plan_id' => '12_teams', 'currency' => 'INR',
@@ -61,19 +69,19 @@ class SubscriptionCheckoutTest extends TestCase
             ->assertJsonPath('gateway', 'whatsapp')
             ->assertJsonMissingPath('shortUrl');
 
-        Http::assertNotSent(fn (HttpRequest $r) => str_contains($r->url(), 'payment_links'));
+        Http::assertNotSent(fn (HttpRequest $r) => str_contains($r->url(), 'payment_links') || str_contains($r->url(), 'payments/qr_codes'));
         $this->assertDatabaseCount('subscription_history', 0);
     }
 
-    public function test_other_country_prices_in_usd(): void
+    public function test_other_country_gets_a_payment_link_in_usd(): void
     {
         $token = $this->tokenFor('us@example.com', 'US');
         $auction = $this->createAuction($token);
 
         $this->as($token)->postJson('/v1/subscription/checkout', ['auctionId' => $auction['id'], 'teams' => 4])
-            ->assertOk()->assertJsonPath('gateway', 'razorpay');
+            ->assertOk()->assertJsonPath('gateway', 'razorpay')->assertJsonPath('mode', 'link');
 
-        // USD 8 → 800 cents.
+        // USD 8 → 800 cents, via a payment link (not a QR).
         Http::assertSent(fn (HttpRequest $r) => str_contains($r->url(), 'payment_links')
             && $r['amount'] === 800 && $r['currency'] === 'USD');
     }
@@ -101,16 +109,17 @@ class SubscriptionCheckoutTest extends TestCase
 
     public function test_payment_link_paid_webhook_activates_the_pending_pack(): void
     {
-        $token = $this->tokenFor('buyer@example.com', 'IN');
+        // Link flow is international (USD); INR activation-by-QR is covered in SubscriptionQrTest.
+        $token = $this->tokenFor('buyer@example.com', 'US');
         $auction = $this->createAuction($token);
 
-        $ref = $this->as($token)->postJson('/v1/subscription/checkout', ['auctionId' => $auction['id'], 'teams' => 12])
-            ->assertOk()->json('referenceId');
+        $ref = $this->as($token)->postJson('/v1/subscription/checkout', ['auctionId' => $auction['id'], 'teams' => 4])
+            ->assertOk()->assertJsonPath('mode', 'link')->json('referenceId');
 
         $payload = [
             'payment_link' => ['entity' => [
-                'id' => 'plink_TEST', 'reference_id' => $ref, 'amount' => 199900, 'amount_paid' => 199900,
-                'currency' => 'INR', 'status' => 'paid',
+                'id' => 'plink_TEST', 'reference_id' => $ref, 'amount' => 800, 'amount_paid' => 800,
+                'currency' => 'USD', 'status' => 'paid',
             ]],
             'payment' => ['entity' => ['id' => 'pay_SUB1']],
         ];
@@ -123,8 +132,7 @@ class SubscriptionCheckoutTest extends TestCase
         $this->assertTrue((bool) $sub->is_active);
         $this->assertSame('active', $sub->status);
 
-        // Entitlement denormalised onto the auction.
-        $this->assertSame(12, (int) Auction::find($auction['id'])->max_teams);
+        $this->assertSame(4, (int) Auction::find($auction['id'])->max_teams);
         $this->assertTrue((bool) Auction::find($auction['id'])->overlay_access);
     }
 

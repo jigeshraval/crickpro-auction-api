@@ -152,6 +152,126 @@ class SubscriptionService
     }
 
     /**
+     * Start a web INR purchase via a UPI QR (the registration-payments flow) —
+     * the buyer scans and pays in any UPI app, no hosted page or contact
+     * questions. Creates a PENDING row + a fixed-amount single-use QR; the
+     * `qr_code.credited` webhook (or the reconcile poll) activates it. UPI QR is
+     * India/INR only — other currencies use createRazorpayCheckout (link).
+     *
+     * @return array{qrImageUrl: string, qrId: string, referenceId: string, amount: int}
+     */
+    public function createRazorpayQr(User $user, Auction $auction, int $teams): array
+    {
+        $planCode = $teams.'_teams';
+        if (! array_key_exists($planCode, (array) config('subscription.team_packs', []))) {
+            throw new \InvalidArgumentException("Unknown team pack: {$planCode}.");
+        }
+
+        $price = SubscriptionPaymentsResolver::price('INR', $planCode);
+        if ($price === null) {
+            throw new \RuntimeException("No INR price configured for {$planCode}.");
+        }
+
+        $amountMinor = $price * 100;
+        $referenceId = 'sub_'.$auction->id.'_'.Str::lower(Str::random(18));
+
+        $sub = SubscriptionHistory::create([
+            'id_user' => $user->id,
+            'id_auction' => $auction->id,
+            'plan_id' => $planCode,
+            'max_teams' => $this->resolveMaxTeams($planCode),
+            'amount' => $price,
+            'currency' => 'INR',
+            'transaction_id' => $referenceId,
+            'source' => 'razorpay',
+            'store' => 'web',
+            'is_active' => false,
+            'status' => SubscriptionHistory::STATUS_PENDING,
+            'metadata' => ['referenceId' => $referenceId, 'amountMinor' => $amountMinor],
+        ]);
+
+        $closeBy = now()->addMinutes((int) config('payments.qr_ttl_minutes', 15));
+
+        try {
+            $qr = app(RazorpayClient::class)->createQr([
+                'type' => 'upi_qr',
+                'name' => Str::limit($auction->name, 40, ''),
+                'usage' => 'single_use',
+                'fixed_amount' => true,
+                'payment_amount' => $amountMinor,
+                'description' => Str::limit("CrickPro Auction — up to {$teams} teams", 100, ''),
+                'close_by' => $closeBy->timestamp,
+                'notes' => [
+                    'referenceId' => $referenceId,
+                    'kind' => 'subscription',
+                    'auctionId' => (string) $auction->id,
+                    'teams' => (string) $teams,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            $sub->update(['status' => SubscriptionHistory::STATUS_CANCELLED, 'is_active' => false]);
+            throw $e;
+        }
+
+        $sub->update(['metadata' => array_merge($sub->metadata ?? [], [
+            'qrId' => $qr['id'] ?? null,
+            'qrImageUrl' => $qr['image_url'] ?? null,
+        ])]);
+
+        return [
+            'qrImageUrl' => (string) ($qr['image_url'] ?? ''),
+            'qrId' => (string) ($qr['id'] ?? ''),
+            'referenceId' => $referenceId,
+            'amount' => $price,
+        ];
+    }
+
+    /**
+     * Activate a pending razorpay subscription from a captured UPI-QR payment
+     * (`qr_code.credited` webhook or qr poll). Matches on the QR's `referenceId`
+     * note. Idempotent; amount/currency are re-checked. Returns the webhook
+     * result string.
+     *
+     * @param  array  $payment  the Razorpay payment entity (amount in paise, currency, status)
+     * @param  array  $qrNotes  the QR's notes ({referenceId, kind, ...})
+     */
+    public function activateFromQr(array $payment, array $qrNotes): string
+    {
+        $ref = (string) ($qrNotes['referenceId'] ?? '');
+        if ($ref === '') {
+            return 'ignored: no reference';
+        }
+
+        $sub = SubscriptionHistory::where('transaction_id', $ref)->where('source', 'razorpay')->first();
+        if (! $sub) {
+            return 'ignored: unknown reference';
+        }
+        if ($sub->is_active && $sub->status === SubscriptionHistory::STATUS_ACTIVE) {
+            return 'ignored: already active';
+        }
+        if (($payment['status'] ?? null) !== 'captured') {
+            return 'ignored: not captured';
+        }
+
+        $paidMinor = (int) ($payment['amount'] ?? 0);
+        $expectedMinor = (int) round(((float) $sub->amount) * 100);
+        $currency = strtoupper((string) ($payment['currency'] ?? ''));
+        if ($currency !== strtoupper((string) $sub->currency) || $paidMinor < $expectedMinor) {
+            return 'ignored: amount/currency mismatch';
+        }
+
+        $sub->update([
+            'is_active' => true,
+            'status' => SubscriptionHistory::STATUS_ACTIVE,
+            'starts_at' => now(),
+            'metadata' => array_merge($sub->metadata ?? [], ['paymentId' => $payment['id'] ?? null, 'activatedVia' => 'qr']),
+        ]);
+        $this->syncAuction($sub->id_auction);
+
+        return 'completed';
+    }
+
+    /**
      * Activate a pending razorpay subscription from a `payment_link.paid` webhook.
      * Idempotent: unknown ref / already-active / amount-or-currency mismatch are
      * all no-ops. Returns the outcome string stored on the webhook event.
@@ -272,31 +392,49 @@ class SubscriptionService
 
         $activated = 0;
         foreach ($rows as $row) {
+            $meta = $row->metadata ?? [];
             try {
+                // A row is either a UPI QR (INR) or a Payment Link (link) — poll
+                // whichever Razorpay object it created.
+                if (! empty($meta['qrId'])) {
+                    $items = app(RazorpayClient::class)->qrPayments((string) $meta['qrId']);
+                    Log::info('Subscription reconcile: qr lookup', ['ref' => $row->transaction_id, 'returned' => count($items)]);
+                    foreach ($items as $pay) {
+                        if (($pay['status'] ?? null) === 'captured') {
+                            $result = $this->activateFromQr($pay, ['referenceId' => (string) $row->transaction_id]);
+                            Log::info('Subscription reconcile: qr activation', ['ref' => $row->transaction_id, 'result' => $result]);
+                            if ($result === 'completed') {
+                                $activated++;
+                            }
+                            break;
+                        }
+                    }
+
+                    continue;
+                }
+
                 $links = app(RazorpayClient::class)->paymentLinksByReference((string) $row->transaction_id);
+                // Surface exactly what Razorpay returned so a prod run is
+                // self-diagnosing (empty = key/mode/API; status != paid = unpaid).
+                Log::info('Subscription reconcile: link lookup', [
+                    'ref' => $row->transaction_id,
+                    'returned' => count($links),
+                    'statuses' => array_map(fn ($l) => $l['status'] ?? null, $links),
+                ]);
+                foreach ($links as $link) {
+                    if (($link['status'] ?? null) === 'paid') {
+                        $result = $this->activateFromPaymentLink($link, []);
+                        Log::info('Subscription reconcile: activation attempt', ['ref' => $row->transaction_id, 'result' => $result]);
+                        if ($result === 'completed') {
+                            $activated++;
+                        }
+                        break;
+                    }
+                }
             } catch (\Throwable $e) {
-                Log::warning('Subscription reconcile: link lookup failed', ['ref' => $row->transaction_id, 'error' => $e->getMessage()]);
+                Log::warning('Subscription reconcile: lookup failed', ['ref' => $row->transaction_id, 'error' => $e->getMessage()]);
 
                 continue;
-            }
-
-            // Surface exactly what Razorpay returned for this reference so a prod
-            // run is self-diagnosing (empty = key/mode/API; status != paid = unpaid).
-            Log::info('Subscription reconcile: link lookup', [
-                'ref' => $row->transaction_id,
-                'returned' => count($links),
-                'statuses' => array_map(fn ($l) => $l['status'] ?? null, $links),
-            ]);
-
-            foreach ($links as $link) {
-                if (($link['status'] ?? null) === 'paid') {
-                    $result = $this->activateFromPaymentLink($link, []);
-                    Log::info('Subscription reconcile: activation attempt', ['ref' => $row->transaction_id, 'result' => $result]);
-                    if ($result === 'completed') {
-                        $activated++;
-                    }
-                    break;
-                }
             }
         }
 

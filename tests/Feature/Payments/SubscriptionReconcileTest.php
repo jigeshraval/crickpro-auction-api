@@ -27,12 +27,13 @@ class SubscriptionReconcileTest extends TestCase
     {
         parent::setUp();
         $this->bootPayments();
-        config(['subscription.prices.INR.4_teams' => 679]);
+        // Payment Links are international-only (INR uses a UPI QR) → US/USD buyer.
+        config(['subscription.prices.USD.4_teams' => 8]);
         // Reconcile only touches rows older than this; keep it 0 so freshly
         // created test rows are eligible immediately.
         config(['payments.poll_min_age_seconds' => 0]);
 
-        $this->owner = $this->tokenFor('organiser@example.com', 'IN');
+        $this->owner = $this->tokenFor('organiser@example.com', 'US');
         $this->auctionId = (int) $this->createAuction($this->owner)['id'];
     }
 
@@ -48,8 +49,8 @@ class SubscriptionReconcileTest extends TestCase
                 $ref = $q['reference_id'] ?? '';
 
                 return Http::response(['payment_links' => [[
-                    'id' => 'plink_TEST', 'reference_id' => $ref, 'currency' => 'INR',
-                    'amount' => 67_900, 'amount_paid' => 67_900, 'status' => $status,
+                    'id' => 'plink_TEST', 'reference_id' => $ref, 'currency' => 'USD',
+                    'amount' => 800, 'amount_paid' => 800, 'status' => $status,
                 ]]]);
             },
         ]);

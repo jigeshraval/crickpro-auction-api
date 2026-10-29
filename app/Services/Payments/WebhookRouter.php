@@ -18,10 +18,17 @@ class WebhookRouter
     public function dispatch(string $source, string $event, array $payload): string
     {
         return match ($event) {
-            'qr_code.credited' => $this->completion->handleCapturedPayment(
-                (array) ($payload['payment']['entity'] ?? []),
-                $payload['qr_code']['entity']['id'] ?? null,
-            ) ? 'completed' : 'ignored: unknown payment',
+            // A subscription QR carries notes.kind=subscription — activate the team
+            // pack; every other QR credit is a player-registration payment.
+            'qr_code.credited' => (($payload['qr_code']['entity']['notes']['kind'] ?? null) === 'subscription')
+                ? app(\App\Services\SubscriptionService::class)->activateFromQr(
+                    (array) ($payload['payment']['entity'] ?? []),
+                    (array) ($payload['qr_code']['entity']['notes'] ?? []),
+                )
+                : ($this->completion->handleCapturedPayment(
+                    (array) ($payload['payment']['entity'] ?? []),
+                    $payload['qr_code']['entity']['id'] ?? null,
+                ) ? 'completed' : 'ignored: unknown payment'),
 
             // close_reason "paid": the payment completes via qr_code.credited / poll — never expire it here.
             'qr_code.closed' => ($payload['qr_code']['entity']['close_reason'] ?? null) === 'paid'
