@@ -86,9 +86,7 @@ return [
 
     /* Per-currency tier prices (MAJOR units). Keyed to the team_packs product ids. */
     'prices' => [
-        // TEMP TEST: all INR tiers ₹1 for live-payment QR testing. REVERT to
-        // 679/1149/1699/1999/2799/3499/4499 before real sales.
-        'INR' => ['4_teams' => 1, '6_teams' => 1, '8_teams' => 1, '12_teams' => 1, '16_teams' => 1, '20_teams' => 1, '30_teams' => 1],
+        'INR' => ['4_teams' => 679, '6_teams' => 1149, '8_teams' => 1699, '12_teams' => 1999, '16_teams' => 2799, '20_teams' => 3499, '30_teams' => 4499],
         'LKR' => ['4_teams' => 2300, '6_teams' => 3900, '8_teams' => 5800, '12_teams' => 6800, '16_teams' => 9500, '20_teams' => 11900, '30_teams' => 15300],
         'BDT' => ['4_teams' => 900, '6_teams' => 1550, '8_teams' => 2300, '12_teams' => 2700, '16_teams' => 3800, '20_teams' => 4700, '30_teams' => 6100],
         'USD' => ['4_teams' => 8, '6_teams' => 13, '8_teams' => 20, '12_teams' => 23, '16_teams' => 32, '20_teams' => 40, '30_teams' => 52],

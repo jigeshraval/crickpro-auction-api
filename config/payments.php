@@ -49,12 +49,12 @@ return [
         'key_id' => env('RAZORPAY_KEY_ID'),
         'key_secret' => env('RAZORPAY_KEY_SECRET'),
         'webhook_secret' => env('RAZORPAY_WEBHOOK_SECRET'),
-        // DIAGNOSTIC. When true, a failed/absent signature is logged and
-        // PROCESSED anyway instead of rejected (401). INSECURE — this lets a
-        // forged webhook activate paid features. Defaulted true for delivery
-        // debugging per request; set RAZORPAY_WEBHOOK_SKIP_SIGNATURE=false (and
-        // make false the default again) before treating this as a real payment path.
-        'webhook_skip_signature' => (bool) env('RAZORPAY_WEBHOOK_SKIP_SIGNATURE', true),
+        // DIAGNOSTIC ONLY. When true, a failed/absent signature is logged and
+        // PROCESSED anyway instead of rejected (401). INSECURE — a forged webhook
+        // could activate paid features / credit a wallet. Default is FALSE
+        // (secure); set RAZORPAY_WEBHOOK_SKIP_SIGNATURE=true ONLY in a dev env
+        // where Razorpay can't reach the box, and never in production.
+        'webhook_skip_signature' => (bool) env('RAZORPAY_WEBHOOK_SKIP_SIGNATURE', false),
     ],
 
     'razorpayx' => [
