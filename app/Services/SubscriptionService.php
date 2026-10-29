@@ -199,7 +199,9 @@ class SubscriptionService
                 'usage' => 'single_use',
                 'fixed_amount' => true,
                 'payment_amount' => $amountMinor,
-                'description' => Str::limit("CrickPro Auction — up to {$teams} teams", 100, ''),
+                // ASCII only — mirror the registration QR (a non-ASCII em dash
+                // has tripped Razorpay QR creation).
+                'description' => Str::limit("CrickPro Auction - up to {$teams} teams", 100, ''),
                 'close_by' => $closeBy->timestamp,
                 'notes' => [
                     'referenceId' => $referenceId,
@@ -210,6 +212,7 @@ class SubscriptionService
             ]);
         } catch (\Throwable $e) {
             $sub->update(['status' => SubscriptionHistory::STATUS_CANCELLED, 'is_active' => false]);
+            Log::warning('Subscription QR creation failed', ['ref' => $referenceId, 'auctionId' => $auction->id, 'error' => $e->getMessage()]);
             throw $e;
         }
 
