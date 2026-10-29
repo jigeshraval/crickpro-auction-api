@@ -79,27 +79,29 @@ class SubscriptionController extends Controller
         if ($resolved['currency'] === 'INR') {
             try {
                 $qr = $this->subs->createRazorpayQr($user, $auction, (int) $data['teams']);
-            } catch (\InvalidArgumentException|\RuntimeException $e) {
-                return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
-            } catch (\Throwable $e) {
+
+                return response()->json([
+                    'status' => 'success',
+                    'gateway' => 'razorpay',
+                    'mode' => 'qr',
+                    'qrImageUrl' => $qr['qrImageUrl'],
+                    'referenceId' => $qr['referenceId'],
+                    'amount' => $qr['amount'],
+                    'currency' => 'INR',
+                ]);
+            } catch (\App\Services\Payments\RazorpayException $e) {
+                // UPI QR unavailable (test-mode, or a Razorpay 500) — don't dead-end
+                // the buyer: fall through to a hosted Payment Link for INR too.
                 report($e);
-
-                return response()->json(['status' => 'error', 'message' => 'Could not start checkout. Please try again.'], 502);
+            } catch (\InvalidArgumentException|\RuntimeException $e) {
+                // Unknown pack / no price — a real client error, not a QR hiccup.
+                return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
             }
-
-            return response()->json([
-                'status' => 'success',
-                'gateway' => 'razorpay',
-                'mode' => 'qr',
-                'qrImageUrl' => $qr['qrImageUrl'],
-                'referenceId' => $qr['referenceId'],
-                'amount' => $qr['amount'],
-                'currency' => 'INR',
-            ]);
         }
 
         // International (non-INR) links require a customer email; make the need explicit.
-        if (empty($effectiveEmail)) {
+        // (INR falling back from QR skips this — no email needed for an INR link.)
+        if ($resolved['currency'] !== 'INR' && empty($effectiveEmail)) {
             return response()->json(['status' => 'error', 'code' => 'EMAIL_REQUIRED', 'message' => 'Please add an email to continue.'], 422);
         }
 
@@ -134,7 +136,9 @@ class SubscriptionController extends Controller
 
         $rows = \App\Models\SubscriptionHistory::query()
             ->where('id_user', $request->user()->id)
-            ->where('status', '!=', \App\Models\SubscriptionHistory::STATUS_DELETED)
+            // Hide soft-deleted + abandoned/failed checkout attempts (e.g. a QR row
+            // cancelled when it fell back to a link).
+            ->whereNotIn('status', [\App\Models\SubscriptionHistory::STATUS_DELETED, \App\Models\SubscriptionHistory::STATUS_CANCELLED])
             ->orderByDesc('id')
             ->simplePaginate($perPage);
 
