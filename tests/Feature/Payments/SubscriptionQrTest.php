@@ -121,6 +121,18 @@ class SubscriptionQrTest extends TestCase
         $this->assertSame('ignored: amount/currency mismatch', RazorpayWebhookEvent::where('event_id', 'evt_qr_short')->value('result'));
     }
 
+    public function test_status_poll_settles_a_captured_qr_without_the_webhook(): void
+    {
+        $ref = $this->checkoutQr();
+
+        // The client's status poll actively checks Razorpay and activates — no
+        // qr_code.credited webhook needed.
+        $this->as($this->owner)->getJson('/v1/subscription/status?auctionId='.$this->auctionId)
+            ->assertOk()->assertJsonPath('data.isSubscribed', true)->assertJsonPath('data.maxTeams', 4);
+
+        $this->assertTrue((bool) SubscriptionHistory::where('transaction_id', $ref)->value('is_active'));
+    }
+
     public function test_reconcile_poll_activates_a_paid_qr(): void
     {
         $ref = $this->checkoutQr();

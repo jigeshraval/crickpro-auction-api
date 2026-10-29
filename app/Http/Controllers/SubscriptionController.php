@@ -205,6 +205,11 @@ class SubscriptionController extends Controller
         $allowed = true;
 
         if ($auctionId) {
+            // Actively settle a pending razorpay purchase against Razorpay before
+            // reading entitlement — so the client's status poll completes a QR/link
+            // payment itself (like registration), not waiting on the webhook.
+            $this->subs->pollPendingForAuction($request->user()->id, $auctionId);
+
             $active = $this->subs->activeForAuction($auctionId);
             $maxTeams = $active?->max_teams ?? 0;
             $isSubscribed = (bool) $active;

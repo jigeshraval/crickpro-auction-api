@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Payments\RazorpayClient;
 use App\Services\Payments\SubscriptionPaymentsResolver;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -367,6 +368,52 @@ class SubscriptionService
         $this->syncAuction($sub->id_auction);
 
         return ['status' => 'active', 'auctionId' => $sub->id_auction];
+    }
+
+    /**
+     * Settle the latest pending razorpay purchase for this auction against
+     * Razorpay NOW (the client's status poll calls this) — QR payments have no
+     * browser redirect, so this is how the screen learns payment completed
+     * without depending on the webhook. Throttled per row to spare the API.
+     */
+    public function pollPendingForAuction(int $userId, int $auctionId): void
+    {
+        $row = SubscriptionHistory::where('id_user', $userId)
+            ->where('id_auction', $auctionId)
+            ->where('source', 'razorpay')
+            ->where('status', SubscriptionHistory::STATUS_PENDING)
+            ->where('is_active', false)
+            ->latest('id')
+            ->first();
+        if (! $row) {
+            return;
+        }
+
+        // At most one Razorpay lookup per row per throttle window (poll fires ~4s).
+        if (! Cache::add("sub:poll:{$row->id}", true, (int) config('payments.poll_throttle_seconds', 5))) {
+            return;
+        }
+
+        $meta = $row->metadata ?? [];
+        try {
+            if (! empty($meta['qrId'])) {
+                foreach (app(RazorpayClient::class)->qrPayments((string) $meta['qrId']) as $pay) {
+                    if (($pay['status'] ?? null) === 'captured') {
+                        $this->activateFromQr($pay, ['referenceId' => (string) $row->transaction_id]);
+                        break;
+                    }
+                }
+            } else {
+                foreach (app(RazorpayClient::class)->paymentLinksByReference((string) $row->transaction_id) as $link) {
+                    if (($link['status'] ?? null) === 'paid') {
+                        $this->activateFromPaymentLink($link, []);
+                        break;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Subscription status poll failed', ['ref' => $row->transaction_id, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
