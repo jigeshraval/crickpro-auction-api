@@ -24,6 +24,9 @@ class SubscriptionCheckoutTest extends TestCase
     {
         parent::setUp();
         $this->bootPayments();
+        // Pin the asserted INR price so a temporary ₹1 test-override in config
+        // doesn't break these assertions.
+        config(['subscription.prices.INR.12_teams' => 1999]);
         $this->fakeRazorpay([
             '*/payment_links' => fn (HttpRequest $r) => Http::response([
                 'id' => 'plink_TEST', 'short_url' => 'https://rzp.io/i/testlink', 'status' => 'created',
