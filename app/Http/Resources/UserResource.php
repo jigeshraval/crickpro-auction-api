@@ -22,6 +22,8 @@ class UserResource extends JsonResource
             'countryId' => $this->id_country,
             'features' => [
                 'registrationPayments' => RegistrationPaymentsEligibility::forOwner($this->resource),
+                // Ops-granted (users.metadata.exportPlayers) — gates the CSV player export.
+                'exportPlayers' => $this->resource->hasFeature('exportPlayers'),
             ],
             'createdAt' => $this->created_at,
         ];

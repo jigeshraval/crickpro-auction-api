@@ -47,6 +47,51 @@ class AuctionPlayerController extends Controller
         ]);
     }
 
+    /**
+     * Stream the auction's full player list as CSV (opens in Excel). Owner-gated
+     * by ShowAuctionRequest; additionally gated by the ops-granted `exportPlayers`
+     * feature so hiding the button isn't the only control. Money is emitted in
+     * major units (stored minor / 100).
+     */
+    public function export(ShowAuctionRequest $request, Auction $auction): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        abort_unless($request->user()->hasFeature('exportPlayers'), 403, 'Player export is not enabled for your account.');
+
+        $players = AuctionPlayer::where('id_auction', $auction->id)
+            ->with(['player', 'soldToTeam'])
+            ->orderBy('auction_order')
+            ->orderBy('id')
+            ->get();
+
+        $major = fn ($minor) => $minor === null ? '' : number_format(((float) $minor) / 100, 2, '.', '');
+        $filename = 'players-'.($auction->slug ?: $auction->id).'.csv';
+
+        return response()->streamDownload(function () use ($players, $major) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['Order', 'Name', 'Role', 'Overseas', 'Category', 'Base Price', 'Status', 'Sold To', 'Sold Price', 'Bids', 'Nationality', 'City', 'Jersey', 'Capped']);
+            foreach ($players as $p) {
+                $pl = $p->player;
+                fputcsv($out, [
+                    $p->auction_order,
+                    $pl?->display_name ?: ($pl?->name ?? ''),
+                    $pl?->role ? str_replace('_', ' ', (string) $pl->role) : '',
+                    $p->is_overseas ? 'Yes' : 'No',
+                    $p->category_code,
+                    $major($p->base_price),
+                    $p->status,
+                    $p->soldToTeam?->name ?? '',
+                    $major($p->sold_price),
+                    $p->bid_count,
+                    $pl?->nationality,
+                    $pl?->city,
+                    $pl?->jersey_number,
+                    $pl?->is_capped ? 'Yes' : 'No',
+                ]);
+            }
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
     /** One row, for the clients' player-detail screen — the list endpoint has no way to ask for a single id. */
     public function show(ShowAuctionPlayerRequest $request, Auction $auction, AuctionPlayer $auctionPlayer): JsonResponse
     {

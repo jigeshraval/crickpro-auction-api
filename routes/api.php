@@ -173,6 +173,8 @@ Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::put('{auction}/categories', [AuctionCategoryController::class, 'sync']);
 
     Route::get('{auction}/players', [AuctionPlayerController::class, 'index']);
+    // Must precede players/{auctionPlayer} so "export" isn't bound as a player id.
+    Route::get('{auction}/players/export', [AuctionPlayerController::class, 'export']);
     Route::get('{auction}/players/{auctionPlayer}', [AuctionPlayerController::class, 'show']);
     Route::post('{auction}/players', [AuctionPlayerController::class, 'store']);
     Route::patch('{auction}/players/{auctionPlayer}', [AuctionPlayerController::class, 'update']);
@@ -271,6 +273,8 @@ Route::prefix('v1/webhook')->middleware('throttle:1200,1')->group(function () {
 // crickpro-admin subscription management (X-Ops-Signature gated).
 Route::prefix('v1/ops')->middleware('ops.signature')->group(function () {
     Route::get('users', [OpsUserController::class, 'index']);
+    Route::get('users/{user}', [OpsUserController::class, 'show']);
+    Route::put('users/{user}/features', [OpsUserController::class, 'updateFeatures']);
     Route::get('subscriptions', [OpsSubscriptionController::class, 'index']);
     Route::post('subscriptions', [OpsSubscriptionController::class, 'store']);
     Route::delete('subscriptions/{id}', [OpsSubscriptionController::class, 'destroy']);

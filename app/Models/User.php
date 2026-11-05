@@ -14,7 +14,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Sanctum\NewAccessToken;
 
-#[Fillable(['name', 'email', 'mobile', 'masked_mobile', 'password', 'email_verified_at', 'verified', 'status', 'block_reason', 'uid', 'profile_image', 'country', 'id_country'])]
+#[Fillable(['name', 'email', 'mobile', 'masked_mobile', 'password', 'email_verified_at', 'verified', 'status', 'block_reason', 'uid', 'profile_image', 'country', 'id_country', 'metadata'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -32,7 +32,14 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'verified' => 'boolean',
+            'metadata' => 'array',
         ];
+    }
+
+    /** An ops-granted per-user feature flag from `metadata` (default false). */
+    public function hasFeature(string $key): bool
+    {
+        return (bool) data_get($this->metadata, $key, false);
     }
 
     /**

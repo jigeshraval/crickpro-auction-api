@@ -53,11 +53,44 @@ class OpsUserController extends Controller
                 ?? ($u->id_country ? ($countryNames[(int) $u->id_country] ?? null) : null),
             'country' => $u->country ?? null,
             'countryName' => $u->id_country ? ($countryNames[(int) $u->id_country] ?? null) : null,
+            'features' => ['exportPlayers' => $u->hasFeature('exportPlayers')],
         ]);
 
         return response()->json([
             'status' => 'success',
             ...paginated($users, 'users', true),
+        ]);
+    }
+
+    /** One auction user + their ops-managed feature flags. */
+    public function show(User $user): JsonResponse
+    {
+        return response()->json([
+            'status' => 'success',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'mobile' => $user->mobile,
+                'country' => $user->country,
+                'createdAt' => $user->created_at,
+                'features' => ['exportPlayers' => $user->hasFeature('exportPlayers')],
+            ],
+        ]);
+    }
+
+    /** Grant/revoke a per-user feature flag (stored in users.metadata). */
+    public function updateFeatures(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate(['exportPlayers' => 'required|boolean']);
+
+        $metadata = $user->metadata ?? [];
+        $metadata['exportPlayers'] = (bool) $data['exportPlayers'];
+        $user->update(['metadata' => $metadata]);
+
+        return response()->json([
+            'status' => 'success',
+            'features' => ['exportPlayers' => $user->hasFeature('exportPlayers')],
         ]);
     }
 
