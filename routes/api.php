@@ -114,6 +114,11 @@ Route::prefix('v1/public/registrations/{registrationToken}')->group(function () 
 // id, login optional. Own limit: venue viewers share one NAT IP.
 Route::get('v1/auctions/{auction}/view/live', [AuctionLiveViewController::class, 'show'])->middleware('throttle:240,1');
 
+// Public, read-only player pool for the browse view (/view-auction/:id, Players
+// tab). Gated to LISTED auctions only — unlike view/live, it never leaks an
+// unlisted auction's pool. Login optional; venue viewers share one NAT IP.
+Route::get('v1/auctions/{auction}/view/players', [AuctionLiveViewController::class, 'players'])->middleware('throttle:240,1');
+
 Route::prefix('v1/auctions')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [AuctionController::class, 'index']);
     Route::get('public', [AuctionController::class, 'publicIndex']);

@@ -226,4 +226,41 @@ class AuctionSpectatorTest extends TestCase
     {
         $this->guest()->getJson('/v1/auctions/999999/view/live')->assertNotFound();
     }
+
+    public function test_view_players_is_public_paginated_and_camel_case(): void
+    {
+        $id = $this->auction['id'];
+        $api = fn () => $this->as($this->organiserToken);
+        $api()->postJson("/v1/auctions/{$id}/teams", ['name' => 'Team Alpha', 'shortName' => 'ALP']);
+        $api()->postJson("/v1/auctions/{$id}/players", ['name' => 'Jane Doe', 'categoryCode' => 'A', 'phone' => '9999999999']);
+
+        $response = $this->guest()->getJson("/v1/auctions/{$id}/view/players")
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonCount(1, 'players')
+            ->assertJsonPath('players.0.player.name', 'Jane Doe')
+            ->assertJsonPath('players.0.categoryCode', 'A')
+            ->assertJsonPath('meta.page', 1)
+            ->assertJsonPath('meta.perPage', 25)
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('meta.totalPages', 1);
+
+        // Public resource must not leak the player's phone (PII).
+        $this->assertArrayNotHasKey('phone', $response->json('players.0.player'));
+    }
+
+    public function test_view_players_404s_for_an_unlisted_auction(): void
+    {
+        $id = $this->auction['id'];
+        $this->as($this->organiserToken)->patchJson("/v1/auctions/{$id}", ['isListed' => false])->assertOk();
+
+        $this->guest()->getJson("/v1/auctions/{$id}/view/players")->assertNotFound();
+    }
+
+    public function test_view_players_404s_for_an_abandoned_auction(): void
+    {
+        Auction::whereKey($this->auction['id'])->update(['status' => Auction::STATUS_ABANDONED]);
+
+        $this->guest()->getJson("/v1/auctions/{$this->auction['id']}/view/players")->assertNotFound();
+    }
 }
