@@ -6,47 +6,37 @@ use App\Models\Auction;
 use App\Models\AuctionCategory;
 use App\Models\AuctionPlayer;
 use App\Models\Player;
-use App\Models\RoleType;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
 class AuctionPlayerRepository
 {
     /**
-     * Build sets (categories) from player roles: one category per role type that
-     * appears among the auction's players, then assign each player to their role's
-     * set. Existing role categories keep their colour/base price.
+     * Group the auction ORDER by player role (batters, then bowlers, …) — a
+     * convenience arrangement. It does NOT touch `category_code` or create any
+     * categories: "category" is the organiser's price tier (A/B/Marquee) and is
+     * kept separate from a player's role/skill (which lives on the Player).
+     * Returns the number of players reordered.
      */
     public function generateSetsFromRoles(Auction $auction): int
     {
         return DB::transaction(function () use ($auction) {
-            $palette = [1 => '#e6c66a', 2 => '#5b8def', 3 => '#3ddc84', 4 => '#b06ae6'];
-            $players = AuctionPlayer::where('id_auction', $auction->id)->with('player.roleType')->get();
+            $players = AuctionPlayer::where('id_auction', $auction->id)
+                ->with('player.roleType')
+                ->get()
+                ->sortBy([
+                    // Unknown role sinks to the end; ties keep their current order.
+                    fn (AuctionPlayer $ap) => $ap->player?->roleType?->sort_order ?? 9999,
+                    fn (AuctionPlayer $ap) => $ap->auction_order ?? 0,
+                ])
+                ->values();
 
-            $usedIds = $players->pluck('player.id_role_type')->filter()->unique();
-            $roleTypes = RoleType::whereIn('id', $usedIds)->orderBy('sort_order')->get();
-
-            foreach ($roleTypes as $rt) {
-                $cat = AuctionCategory::firstOrNew(['id_auction' => $auction->id, 'code' => $rt->short]);
-                $cat->name = $rt->name;
-                $cat->sort_order = $rt->sort_order;
-                if (! $cat->exists) {
-                    $cat->color = $palette[$rt->id] ?? '#8B5CF6';
-                    $cat->default_base_price = 0;
-                }
-                $cat->save();
-            }
-
-            $assigned = 0;
+            $order = 1;
             foreach ($players as $ap) {
-                $rt = $ap->player?->roleType;
-                if ($rt) {
-                    $ap->update(['category_code' => $rt->short]);
-                    $assigned++;
-                }
+                $ap->update(['auction_order' => $order++]);
             }
 
-            return $assigned;
+            return $players->count();
         });
     }
 
